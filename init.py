@@ -52,7 +52,7 @@ def main():
     break
 
   utils.save_checkpoint(generator, optimizer_g, hps.train.learning_rate, 0, os.path.join(hps.model_dir, "ddi_G.pth"))
-
+  
                             
 if __name__ == "__main__":
   main()
