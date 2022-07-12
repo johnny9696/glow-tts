@@ -4,7 +4,7 @@ import torch
 import torch.utils.data
 
 import commons 
-from utils import load_wav_to_torch, load_filepaths_and_text
+from utils import load_wav_to_torch, load_filepaths_and_text, load_flac_to_torch
 from text import text_to_sequence, cmudict
 from text.symbols import symbols
 
@@ -140,7 +140,7 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
             hparams.n_mel_channels, hparams.sampling_rate, hparams.mel_fmin,
             hparams.mel_fmax)
 
-        self._filter_text_len()
+        #self._filter_text_len()
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
 
@@ -161,7 +161,10 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
 
     def get_mel(self, filename):
         if not self.load_mel_from_disk:
-            audio, sampling_rate = load_wav_to_torch(filename)
+            if filename[-4:]=='flac':
+                audio,sampling_rate=load_flac_to_torch(filename)
+            else:
+                audio, sampling_rate = load_wav_to_torch(filename)
             if sampling_rate != self.stft.sampling_rate:
                 raise ValueError("{} {} SR doesn't match target {} SR".format(
                     sampling_rate, self.stft.sampling_rate))
