@@ -46,17 +46,10 @@ def train_and_eval(rank, n_gpus, hps):
 
 
   torch.manual_seed(hps.train.seed)
-  torch.cuda.set_device(rank)
+  torch.cuda.set_device(1)
 
 
   train_dataset = TextMelLoader(hps.data.training_files, hps.data)
-  """
-  train_sampler = torch.utils.data.distributed.DistributedSampler(
-      train_dataset,
-      num_replicas=n_gpus,
-      rank=rank,
-      shuffle=True)
-  """
   collate_fn = TextMelCollate(1)
   train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
@@ -67,30 +60,23 @@ def train_and_eval(rank, n_gpus, hps):
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
-
+  print(symbols)
   generator = models.FlowGenerator(
       n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
       out_channels=hps.data.n_mel_channels, 
       **hps.model).cuda(rank)
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
-  """
-  if hps.train.fp16_run:
-    generator, optimizer_g._optim = amp.initialize(generator, optimizer_g._optim, opt_level="O1")
-  generator = DDP(generator)
-  """
+
   epoch_str = 1
   global_step = 0
-  try:
-    _, _, _, epoch_str = utils.load_checkpoint("./pretrained.pth", generator, optimizer_g)
-    print("Pretained model has loaded")
-    epoch_str += 1
-    optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
-    optimizer_g._update_learning_rate()
-    global_step = (epoch_str - 1) * len(train_loader)
-  except:
-    if hps.train.ddi and os.path.isfile(os.path.join(hps.model_dir, "ddi_G.pth")):
-      _ = utils.load_checkpoint(os.path.join(hps.model_dir, "ddi_G.pth"), generator, optimizer_g)
+  generator, _, _, epoch_str = utils.load_checkpoint("./pretrained.pth", generator, optimizer_g)
+  print("Pretained model has loaded")
+  epoch_str += 1
+  optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
+  optimizer_g._update_learning_rate()
+  global_step = (epoch_str - 1) * len(train_loader)
   
+    
   
   for epoch in range(epoch_str, hps.train.epochs + 1):
     if rank==0:
