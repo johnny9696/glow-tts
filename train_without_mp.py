@@ -123,6 +123,8 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
           100. * batch_idx / len(train_loader),
           loss_g.item()))
         logger.info([x.item() for x in loss_gs] + [global_step, optimizer_g.get_lr()])
+
+        audio_logging(y_gen,global_step,hps,writer,batch_idx,'train')
         
         scalar_dict = {"loss/g/total": loss_g, "learning_rate": optimizer_g.get_lr(), "grad_norm": grad_norm}
         scalar_dict.update({"loss/g/{}".format(i): v for i, v in enumerate(loss_gs)})
@@ -152,9 +154,10 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
 
         
         (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths, gen=False)
-        audio_logging(z,epoch,hps,writer_eval)
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
         l_length = commons.duration_loss(logw, logw_, x_lengths)
+        if batch_idx%10==0:
+          audio_logging(z,epoch,hps,writer_eval,batch_idx,'eval')
 
         loss_gs = [l_mle, l_length]
         loss_g = sum(loss_gs)
@@ -182,12 +185,12 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
       scalars=scalar_dict)
     logger.info('====> Epoch: {}'.format(epoch))
 
-def audio_logging(audio, epoch, hps, writer):
+def audio_logging(audio, epoch, hps, writer,number,type_):
   y_gen=audio.cpu().numpy()
   audio=librosa.feature.inverse.mel_to_audio(np.abs(y_gen[0]),hop_length=hps.data.hop_length,
     win_length=hps.data.win_length,n_fft=hps.data.filter_length,n_iter=60)
   audio=torch.Tensor(audio)
-  writer.add_audio("eval_audio",audio,epoch,hps.data.sampling_rate)
+  writer.add_audio(type_+"_audio/"+str(number),audio,epoch,hps.data.sampling_rate)
 
 if __name__ == "__main__":
   main()
