@@ -60,7 +60,6 @@ def train_and_eval(rank, n_gpus, hps):
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
-  print(symbols)
   generator = models.FlowGenerator(
       n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
       out_channels=hps.data.n_mel_channels, 
@@ -125,7 +124,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
         logger.info([x.item() for x in loss_gs] + [global_step, optimizer_g.get_lr()])
 
         audio_logging(y_gen,global_step,hps,writer,batch_idx,'train')
-        
+
         scalar_dict = {"loss/g/total": loss_g, "learning_rate": optimizer_g.get_lr(), "grad_norm": grad_norm}
         scalar_dict.update({"loss/g/{}".format(i): v for i, v in enumerate(loss_gs)})
         utils.summarize(
@@ -186,8 +185,9 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
     logger.info('====> Epoch: {}'.format(epoch))
 
 def audio_logging(audio, epoch, hps, writer,number,type_):
-  y_gen=audio.cpu().numpy()
-  audio=librosa.feature.inverse.mel_to_audio(np.abs(y_gen[0]),hop_length=hps.data.hop_length,
+  y_gen=audio.cpu()
+  y_gen=y_gen.detach().numpy()
+  audio=librosa.feature.inverse.mel_to_audio(y_gen[0],hop_length=hps.data.hop_length,
     win_length=hps.data.win_length,n_fft=hps.data.filter_length,n_iter=60)
   audio=torch.Tensor(audio)
   writer.add_audio(type_+"_audio/"+str(number),audio,epoch,hps.data.sampling_rate)

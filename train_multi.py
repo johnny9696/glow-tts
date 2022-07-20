@@ -48,13 +48,6 @@ def train_and_eval(rank, n_gpus, hps):
 
 
   train_dataset = TextMelSpeakerLoader(hps.data.training_files, hps.data)
-  """
-  train_sampler = torch.utils.data.distributed.DistributedSampler(
-      train_dataset,
-      num_replicas=n_gpus,
-      rank=rank,
-      shuffle=True)
-  """
   collate_fn = TextMelSpeakerCollate(1)
   train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
@@ -68,8 +61,9 @@ def train_and_eval(rank, n_gpus, hps):
 
   generator = models.FlowGenerator(
       n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
-      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=80,**hps.model).cuda()
-  optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
+      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=80,**hps.model).cuda(n_gpus)
+  optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, 
+    warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
   """
   if hps.train.fp16_run:
     generator, optimizer_g._optim = amp.initialize(generator, optimizer_g._optim, opt_level="O1")
@@ -104,7 +98,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
   for batch_idx, (x, x_lengths, y, y_lengths, sid) in enumerate(train_loader):
     x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
     y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
-    si=sid.cuda(rank,non_blocking=True)
+    sid=sid.cuda(rank,non_blocking=True)
     # Train Generator
     optimizer_g.zero_grad()
     

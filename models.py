@@ -276,7 +276,7 @@ class FlowGenerator(nn.Module):
 
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
-      g = F.normalize(self.emb_g(g)).unsqueeze(-1) # [b, h]
+      g = F.normalize(self.emb_g(g)).unsqueeze(-1)# [b, h]
     x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g)
 
     if gen:
