@@ -8,7 +8,6 @@ from utils import load_wav_to_torch, load_filepaths_and_text, load_flac_to_torch
 from text import text_to_sequence, cmudict
 from text.symbols import symbols
 
-
 class TextMelLoader(torch.utils.data.Dataset):
     """
         1) loads audio,text pairs
@@ -133,6 +132,7 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
         self.add_blank = getattr(hparams, "add_blank", False) # improved version
         self.min_text_len = getattr(hparams, "min_text_len", 1)
         self.max_text_len = getattr(hparams, "max_text_len", 190)
+        self.s_dict=self.speaker_dict()
         if getattr(hparams, "cmudict_path", None) is not None:
           self.cmudict = cmudict.CMUDict(hparams.cmudict_path)
         self.stft = commons.TacotronSTFT(
@@ -143,6 +143,14 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
         #self._filter_text_len()
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
+
+    def speaker_dict(self):
+        sid_dict={}
+        for _, data in enumerate(self.audiopaths_sid_text):
+            if data[1] not in sid_dict:
+                sid_dict[data[1]]=len(sid_dict)
+        return sid_dict
+            
 
     def _filter_text_len(self):
       audiopaths_sid_text_new = []
@@ -190,6 +198,7 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
         return text_norm
 
     def get_sid(self, sid):
+        sid=self.s_dict[sid]
         sid = torch.IntTensor([int(sid)])
         return sid
 

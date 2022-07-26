@@ -29,7 +29,7 @@ def main():
   rank=0
 
   hps = utils.get_hparams()
-  train_and_eval(rank,1,hps)
+  train_and_eval(rank,0,hps)
   
   
 
@@ -49,26 +49,22 @@ def train_and_eval(rank, n_gpus, hps):
 
   train_dataset = TextMelSpeakerLoader(hps.data.training_files, hps.data)
   collate_fn = TextMelSpeakerCollate(1)
-  train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False,
+  train_loader = DataLoader(train_dataset, num_workers=1, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
   if rank == 0:
     val_dataset = TextMelSpeakerLoader(hps.data.validation_files, hps.data)
-    val_loader = DataLoader(val_dataset, num_workers=8, shuffle=False,
+    val_loader = DataLoader(val_dataset, num_workers=1, shuffle=False,
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
 
   generator = models.FlowGenerator(
       n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
-      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=80,**hps.model).cuda(n_gpus)
+      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=256,**hps.model).cuda(n_gpus)
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, 
     warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
-  """
-  if hps.train.fp16_run:
-    generator, optimizer_g._optim = amp.initialize(generator, optimizer_g._optim, opt_level="O1")
-  generator = DDP(generator)
-  """
+
   epoch_str = 1
   global_step = 0
   try:
@@ -102,7 +98,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
     # Train Generator
     optimizer_g.zero_grad()
     
-    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,sid, gen=False)
+    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid, gen=False)
     l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
     l_length = commons.duration_loss(logw, logw_, x_lengths)
 
@@ -121,7 +117,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
     
     if rank==0:
       if batch_idx % hps.train.log_interval == 0:
-        (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], gen=True)
+        (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
         logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
           epoch, batch_idx * len(x), len(train_loader.dataset),
           100. * batch_idx / len(train_loader),
@@ -150,12 +146,12 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
     generator.eval()
     losses_tot = []
     with torch.no_grad():
-      for batch_idx, (x, x_lengths, y, y_lengths) in enumerate(val_loader):
+      for batch_idx, (x, x_lengths, y, y_lengths,sid) in enumerate(val_loader):
         x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
         y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
-
+        sid=sid.cuda(rank,non_blocking=True)
         
-        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths, gen=False)
+        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid, gen=False)
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
         l_length = commons.duration_loss(logw, logw_, x_lengths)
 
