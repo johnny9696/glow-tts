@@ -67,6 +67,7 @@ def griffin_lim(magnitudes, stft_fn, n_iters=30):
     angles = np.angle(np.exp(2j * np.pi * np.random.rand(*magnitudes.size())))
     angles = angles.astype(np.float32)
     angles = torch.autograd.Variable(torch.from_numpy(angles))
+    print(magnitudes.size(),angles.size())
     signal = stft_fn.inverse(magnitudes, angles).squeeze(1)
 
     for i in range(n_iters):

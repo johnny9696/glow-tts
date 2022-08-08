@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from librosa.filters import mel as librosa_mel_fn
 from audio_processing import dynamic_range_compression
 from audio_processing import dynamic_range_decompression
+from audio_processing import griffin_lim
 from stft import STFT
 
 
@@ -195,10 +196,16 @@ class TacotronSTFT(nn.Module):
 
     magnitudes, phases = self.stft_fn.transform(y)
     magnitudes = magnitudes.data
-    mel_output = torch.matmul(self.mel_basis, magnitudes)
+    mel_output = torch.matmul(self.mel_basis, magnitudes) 
     mel_output = self.spectral_normalize(mel_output)
     return mel_output
 
+  def mel_to_audio(self, mel):
+    mel=self.spectral_de_normalize(mel)
+    inv_basis=torch.linalg.inv_ex(self.mel_basis)
+    mel=torch.matmul(inv_basis.transpose(1,2),mel)
+    audio=griffin_lim(mel,self.stft_fn,n_iters=60)
+    return audio
 
 def clip_grad_value_(parameters, clip_value, norm_type=2):
   if isinstance(parameters, torch.Tensor):

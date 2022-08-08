@@ -15,6 +15,9 @@ import models
 import commons
 import utils
 from text.symbols import symbols
+
+import audio_processing as ap
+import librosa
                             
 
 global_step = 2
@@ -104,13 +107,6 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
 
     loss_gs = [l_mle, l_length]
     loss_g = sum(loss_gs)
-    """
-    if hps.train.fp16_run:
-      with amp.scale_loss(loss_g, optimizer_g._optim) as scaled_loss:
-        scaled_loss.backward()
-      grad_norm = commons.clip_grad_value_(amp.master_params(optimizer_g._optim), 5)
-    else:
-    """
     loss_g.backward()
     grad_norm = commons.clip_grad_value_(generator.parameters(), 5)
     optimizer_g.step()
@@ -118,6 +114,8 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
     if rank==0:
       if batch_idx % hps.train.log_interval == 0:
         (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
+        audio_logging(y[:1],sid,global_step,hps,writer,batch_idx,'train_org')
+        audio_logging(y_gen,sid,global_step,hps,writer,batch_idx,'train')
         logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
           epoch, batch_idx * len(x), len(train_loader.dataset),
           100. * batch_idx / len(train_loader),
@@ -164,6 +162,9 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
           losses_tot = [x + y for (x, y) in zip(losses_tot, loss_gs)]
 
         if batch_idx % hps.train.log_interval == 0:
+          (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
+          audio_logging(y[:1],sid,global_step,hps,writer_eval,batch_idx,'eval_org')
+          audio_logging(y_gen,sid,global_step,hps,writer_eval,batch_idx,'eval')
           logger.info('Eval Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
             epoch, batch_idx * len(x), len(val_loader.dataset),
             100. * batch_idx / len(val_loader),
@@ -180,6 +181,19 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
       global_step=global_step, 
       scalars=scalar_dict)
     logger.info('====> Epoch: {}'.format(epoch))
+
+
+def audio_logging(audio,sid, epoch, hps, writer,number,type_):
+  audio=ap.dynamic_range_decompression(audio)
+  mel=audio.detach().cpu()
+  mel=mel.numpy()
+  mel_basis=librosa.filters.mel(sr=hps.data.sampling_rate, n_fft=hps.data.filter_length, n_mels=hps.data.n_mel_channels)
+  covered_mel=librosa.util.nnls(mel_basis,mel)
+  cover_audio=librosa.griffinlim(covered_mel,n_iter=60)
+  cover_audio=torch.tensor(cover_audio)
+  id=sid.detach().cpu()
+  id=id.numpy()
+  writer.add_audio(type_+"_audio/speakerID_"+str(id)+str(number),cover_audio,epoch,hps.data.sampling_rate)
 
                            
 if __name__ == "__main__":

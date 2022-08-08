@@ -6,17 +6,24 @@ import torch
 from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+import torchaudio as ta
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 
 
 from data_utils import TextMelLoader, TextMelCollate , TextMelSpeakerLoader, TextMelSpeakerCollate
+from audio_processing import dynamic_range_compression
+import audio_processing as ap
 import models
 import commons
 import utils
 from text.symbols import symbols
 import librosa
 import numpy as np
+
+import warnings
+
+warnings.simplefilter(action='ignore',category=FutureWarning)
                             
 
 global_step = 2
@@ -51,12 +58,12 @@ def train_and_eval(rank, n_gpus, hps):
 
   train_dataset = TextMelLoader(hps.data.training_files, hps.data)
   collate_fn = TextMelCollate(1)
-  train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False,
+  train_loader = DataLoader(train_dataset, num_workers=1, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
   if rank == 0:
     val_dataset = TextMelLoader(hps.data.validation_files, hps.data)
-    val_loader = DataLoader(val_dataset, num_workers=8, shuffle=False,
+    val_loader = DataLoader(val_dataset, num_workers=1, shuffle=False,
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
@@ -103,13 +110,6 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
 
     loss_gs = [l_mle, l_length]
     loss_g = sum(loss_gs)
-    """
-    if hps.train.fp16_run:
-      with amp.scale_loss(loss_g, optimizer_g._optim) as scaled_loss:
-        scaled_loss.backward()
-      grad_norm = commons.clip_grad_value_(amp.master_params(optimizer_g._optim), 5)
-    else:
-    """
     loss_g.backward()
     grad_norm = commons.clip_grad_value_(generator.parameters(), 5)
     optimizer_g.step()
@@ -122,7 +122,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
           100. * batch_idx / len(train_loader),
           loss_g.item()))
         logger.info([x.item() for x in loss_gs] + [global_step, optimizer_g.get_lr()])
-
+        audio_logging(y,global_step,hps,writer,batch_idx,'train_org')
         audio_logging(y_gen,global_step,hps,writer,batch_idx,'train')
 
         scalar_dict = {"loss/g/total": loss_g, "learning_rate": optimizer_g.get_lr(), "grad_norm": grad_norm}
@@ -156,7 +156,8 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
         l_length = commons.duration_loss(logw, logw_, x_lengths)
         if batch_idx%10==0:
-          audio_logging(z,epoch,hps,writer_eval,batch_idx,'eval')
+          (y_gen, _, _, _, _), (_, _, _), (_, _, _) = generator(x, x_lengths,gen=True)
+          audio_logging(y_gen,epoch,hps,writer_eval,batch_idx,'eval')
 
         loss_gs = [l_mle, l_length]
         loss_g = sum(loss_gs)
@@ -185,12 +186,13 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
     logger.info('====> Epoch: {}'.format(epoch))
 
 def audio_logging(audio, epoch, hps, writer,number,type_):
-  y_gen=audio.cpu()
-  y_gen=y_gen.detach().numpy()
-  audio=librosa.feature.inverse.mel_to_audio(y_gen[0],hop_length=hps.data.hop_length,
-    win_length=hps.data.win_length,n_fft=hps.data.filter_length,n_iter=60)
-  audio=torch.Tensor(audio)
-  writer.add_audio(type_+"_audio/"+str(number),audio,epoch,hps.data.sampling_rate)
-
+  audio=ap.dynamic_range_decompression(audio)
+  mel=audio.detach().cpu()
+  mel=mel.numpy()
+  mel_basis=librosa.filters.mel(sr=hps.data.sampling_rate, n_fft=hps.data.filter_length, n_mels=hps.data.n_mel_channels)
+  covered_mel=librosa.util.nnls(mel_basis,mel)
+  cover_audio=librosa.griffinlim(covered_mel,n_iter=60)
+  cover_audio=torch.tensor(cover_audio)
+  writer.add_audio(type_+"_audio/"+str(number),cover_audio[0],epoch,hps.data.sampling_rate)
 if __name__ == "__main__":
   main()

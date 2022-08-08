@@ -116,12 +116,12 @@ class STFT(torch.nn.Module):
 
         magnitude = torch.sqrt(real_part**2 + imag_part**2)
         phase = torch.atan2(imag_part.data, real_part.data)
-
         return magnitude, phase
 
     def inverse(self, magnitude, phase):
-        recombine_magnitude_phase = torch.cat(
-            [magnitude*torch.cos(phase), magnitude*torch.sin(phase)], dim=1)
+        magnitude=magnitude.cuda(0, non_blocking=True)
+        phase=phase.cuda(0, non_blocking=True)
+        recombine_magnitude_phase = torch.cat([magnitude*torch.cos(phase), magnitude*torch.sin(phase)], dim=1)
 
         if magnitude.device.type == "cuda":
             inverse_transform = F.conv_transpose1d(

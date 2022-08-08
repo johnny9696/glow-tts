@@ -7,6 +7,8 @@ import commons
 from utils import load_wav_to_torch, load_filepaths_and_text, load_flac_to_torch
 from text import text_to_sequence, cmudict
 from text.symbols import symbols
+from librosa.feature import melspectrogram
+import librosa
 
 class TextMelLoader(torch.utils.data.Dataset):
     """
@@ -15,6 +17,7 @@ class TextMelLoader(torch.utils.data.Dataset):
         3) computes mel-spectrograms from audio files.
     """
     def __init__(self, audiopaths_and_text, hparams):
+        self.hps=hparams
         self.audiopaths_and_text = load_filepaths_and_text(audiopaths_and_text)
         self.text_cleaners = hparams.text_cleaners
         self.max_wav_value = hparams.max_wav_value
@@ -49,7 +52,7 @@ class TextMelLoader(torch.utils.data.Dataset):
             audio_norm = audio / self.max_wav_value
             audio_norm = audio_norm.unsqueeze(0)
             melspec = self.stft.mel_spectrogram(audio_norm)
-            melspec = torch.squeeze(melspec, 0)
+            melspec = torch.squeeze(torch.tensor(melspec), 0)
         else:
             melspec = torch.from_numpy(np.load(filename))
             assert melspec.size(0) == self.stft.n_mel_channels, (
