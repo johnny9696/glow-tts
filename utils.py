@@ -149,9 +149,9 @@ def load_filepaths_and_text(filename, split="|"):
 
 def get_hparams(init=True):
   parser = argparse.ArgumentParser()
-  parser.add_argument('-c', '--config', type=str, default="./configs/base_blank.json",
+  parser.add_argument('-c', '--config', type=str, default="./configs/multi.json",
                       help='JSON file for configuration',required=False)
-  parser.add_argument('-m', '--model', type=str, default="base",required=False,
+  parser.add_argument('-m', '--model', type=str, default="multi",required=False,
                       help='Model name')
   
   args = parser.parse_args()
