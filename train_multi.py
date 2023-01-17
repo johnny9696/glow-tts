@@ -12,6 +12,7 @@ import torch.distributed as dist
 
 from data_utils import TextMelLoader, TextMelCollate , TextMelSpeakerLoader, TextMelSpeakerCollate
 import models
+from CAE.CAE import Convolution_Auto_Encoder as CAE
 import commons
 import utils
 from text.symbols import symbols
@@ -61,22 +62,36 @@ def train_and_eval(rank, n_gpus, hps):
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
+  AE_model = CAE(encoder_dim=1, hidden_1dim=3,
+     kernel=5)
+
+    #load model dict
+  checkpoint_path = "/media/caijb/data_drive/autoencoder/log/kernel5"
+  checkpoint_path = utils.latest_checkpoint_path(checkpoint_path)
+  AE_model, _, _, _ = utils.load_checkpoint(checkpoint_path, AE_model)
 
   generator = models.FlowGenerator(
       n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
       out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=256,**hps.model).cuda(n_gpus)
+  
+  generator.prevec = AE_model.Encoder
+
+  
+  for p in generator.prevec.parameters():
+    p.requires_grad = False
+  
+
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, 
     warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
 
   epoch_str = 1
   global_step = 0
   try:
-    _, _, _, epoch_str = utils.load_checkpoint("./G_20.pth", generator, optimizer_g)
+    _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator, optimizer_g)
     epoch_str += 1
     optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
     optimizer_g._update_learning_rate()
     global_step = (epoch_str - 1) * len(train_loader)
-    print("train has continued")
   except:
     if hps.train.ddi and os.path.isfile(os.path.join(hps.model_dir, "ddi_G.pth")):
       _ = utils.load_checkpoint(os.path.join(hps.model_dir, "ddi_G.pth"), generator, optimizer_g)
@@ -115,11 +130,8 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
     if rank==0:
       if batch_idx % hps.train.log_interval == 0:
         (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
-        try:
-          audio_logging(y[:1],sid,global_step,hps,writer,batch_idx,'train_org')
-          audio_logging(y_gen,sid,global_step,hps,writer,batch_idx,'train')
-        except:
-          print("Training Audio logging ERROR")
+        audio_logging(y[:1],sid[:1],global_step,hps,writer,batch_idx,'train_org')
+        audio_logging(y_gen,sid[:1],global_step,hps,writer,batch_idx,'train')
         logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
           epoch, batch_idx * len(x), len(train_loader.dataset),
           100. * batch_idx / len(train_loader),
@@ -167,11 +179,8 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
 
         if batch_idx % hps.train.log_interval == 0:
           (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
-          try:
-            audio_logging(y[:1],sid[:1],global_step,hps,writer_eval,batch_idx,'eval_org')
-            audio_logging(y_gen,sid[:1],global_step,hps,writer_eval,batch_idx,'eval')
-          except:
-            print("Evaluation writing ERROR")
+          audio_logging(y[:1],sid[:1],global_step,hps,writer_eval,batch_idx,'eval_org')
+          audio_logging(y_gen,sid[:1],global_step,hps,writer_eval,batch_idx,'eval')
           logger.info('Eval Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
             epoch, batch_idx * len(x), len(val_loader.dataset),
             100. * batch_idx / len(val_loader),

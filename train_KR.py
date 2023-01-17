@@ -17,7 +17,7 @@ import audio_processing as ap
 import models
 import commons
 import utils
-from text.symbols import symbols
+from text.korean import symbols,last_letter
 import librosa
 import numpy as np
 
@@ -58,17 +58,17 @@ def train_and_eval(rank, n_gpus, hps):
 
   train_dataset = TextMelLoader(hps.data.training_files, hps.data)
   collate_fn = TextMelCollate(1)
-  train_loader = DataLoader(train_dataset, num_workers=1, shuffle=False,
+  train_loader = DataLoader(train_dataset, num_workers=4, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
   if rank == 0:
     val_dataset = TextMelLoader(hps.data.validation_files, hps.data)
-    val_loader = DataLoader(val_dataset, num_workers=1, shuffle=False,
+    val_loader = DataLoader(val_dataset, num_workers=4, shuffle=False,
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
   generator = models.FlowGenerator(
-      n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
+      n_vocab=len(symbols)+len(last_letter) + getattr(hps.data, "add_blank", False), 
       out_channels=hps.data.n_mel_channels, 
       **hps.model).cuda(rank)
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)

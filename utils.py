@@ -149,13 +149,13 @@ def load_filepaths_and_text(filename, split="|"):
 
 def get_hparams(init=True):
   parser = argparse.ArgumentParser()
-  parser.add_argument('-c', '--config', type=str, default="./configs/multi.json",
+  parser.add_argument('-c', '--config', type=str, default="./configs/multi_lang.json",
                       help='JSON file for configuration',required=False)
-  parser.add_argument('-m', '--model', type=str, default="multi",required=False,
+  parser.add_argument('-m', '--model', type=str, default="cross",required=False,
                       help='Model name')
   
   args = parser.parse_args()
-  model_dir = os.path.join("/media/caijb/data_drive/glowtts/logs", args.model)
+  model_dir = os.path.join("/media/caijb/data_drive/glowtts_KR/logs/", args.model)
 
   if not os.path.exists(model_dir):
     os.makedirs(model_dir)

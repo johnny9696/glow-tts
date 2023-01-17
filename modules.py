@@ -1,5 +1,6 @@
 import copy
 import math
+from urllib.parse import non_hierarchical
 import numpy as np
 import scipy
 import torch
@@ -58,7 +59,9 @@ class ConvReluNorm(nn.Module):
   def forward(self, x, x_mask):
     x_org = x
     for i in range(self.n_layers):
+      #print(i)
       x = self.conv_layers[i](x * x_mask)
+      #print(x.size(),x_mask.size())
       x = self.norm_layers[i](x)
       x = self.relu_drop(x)
     x = x_org + self.proj(x)
@@ -104,12 +107,15 @@ class WN(torch.nn.Module):
         res_skip_layer = torch.nn.utils.weight_norm(res_skip_layer, name='weight')
         self.res_skip_layers.append(res_skip_layer)
 
-  def forward(self, x, x_mask=None, g=None, **kwargs):
+  def forward(self, x, x_mask=None, g=None, l=None, **kwargs):
       output = torch.zeros_like(x)
       n_channels_tensor = torch.IntTensor([self.hidden_channels])
 
-      if g is not None:
+      if g is not None and l is None:
         g = self.cond_layer(g)
+      elif g is not None and l is not None:
+        g=torch.cat((g,l),1)
+        g=self.cond_layer(g)
 
       for i in range(self.n_layers):
           x_in = self.in_layers[i](x)
@@ -119,7 +125,6 @@ class WN(torch.nn.Module):
             g_l = g[:,cond_offset:cond_offset+2*self.hidden_channels,:]
           else:
             g_l = torch.zeros_like(x_in)
-
           acts = commons.fused_add_tanh_sigmoid_multiply(
               x_in,
               g_l,
