@@ -9,7 +9,7 @@
 
 def l2num(lang) -> int:
     result=None
-    if lang == 'dutch' or lang == 'Dutch' or lang == 'Du' or lang == 'du':
+    if lang == 'german' or lang == 'De' or lang == 'De' or lang == 'de':
         result = 0
     elif lang == 'english' or lang == 'English' or lang == 'En' or lang == 'en':
         result = 1

@@ -28,12 +28,17 @@ class text2vec():
 		esng = ESpeakNG()
 		esng.voice = id
 		ipa_data= esng.g2p (text, ipa=2)
+		print(ipa_data)
 		return ipa_data
 
 	def ipa2vec(self,data):
 		result=[]
 		for i in data:
-			result.append(self.ipa.index(i))
+			try :
+				result.append(self.ipa.index(i))
+			except :
+				with open('./what.txt','w', encoding= 'UTF-8')  as f:
+					f.write(i)
 		return result
 
 def text_to_sequence(text,id):
@@ -51,4 +56,13 @@ def IPA_set(text,id):
 
 
 if __name__=='__main__':
-	print(text_to_sequence("이상한 나라의 엘리스는 정말로 재밋지만 기괴한 이야기도 많이 들어 있는 거 같아\n",'ko'))
+	text_path = '/media/caijb/data_drive/data/ge_test.txt'
+	with open(text_path,'r',encoding='UTF-8') as f:
+		data = f.read().split('\n')
+	for i in data:
+		i = i.split('|')
+		_, _, lang, text = i[0], i[1], i[2], i[3]
+		result = text_to_sequence(text,lang)
+
+
+
