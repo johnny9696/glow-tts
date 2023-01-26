@@ -24,11 +24,11 @@ class text2vec():
 	def text2ipa(self,text,id):
 		if id =='english':
 			id='en-us'
-		print(text,id)
+		#print(text,id)
 		esng = ESpeakNG()
 		esng.voice = id
 		ipa_data= esng.g2p (text, ipa=2)
-		print(ipa_data)
+		#print(ipa_data)
 		return ipa_data
 
 	def ipa2vec(self,data):

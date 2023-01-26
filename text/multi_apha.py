@@ -8,7 +8,8 @@ import sys
 _pad        = '_'
 _punctuation = '!\'(),.:;?`´ '
 _special = '-^'
-_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+with open('./text/IPA.txt', 'r',encoding='UTF-8') as f: 
+    _letters = f.read()
 
 letter_=[_pad] + list(_special) + list(_punctuation) + list(_letters)
 

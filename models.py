@@ -180,10 +180,10 @@ class FlowSpecDecoder(nn.Module):
       x, x_mask = commons.squeeze(x, x_mask, self.n_sqz)
     for f in flows:
       if not reverse:
-        x, logdet = f(x, x_mask, g=g,l=l, reverse=reverse)
+        x, logdet = f(x, x_mask, g=g, l=l, reverse=reverse)
         logdet_tot += logdet
       else:
-        x, logdet = f(x, x_mask, g=g,l=l, reverse=reverse)
+        x, logdet = f(x, x_mask, g=g, l=l, reverse=reverse)
     if self.n_sqz > 1:
       x, x_mask = commons.unsqueeze(x, x_mask, self.n_sqz)
     return x, logdet_tot
@@ -282,25 +282,31 @@ class FlowGenerator(nn.Module):
 
     if n_speakers > 1 and n_lang < 1:
       self.emb_g = pre_vec(encoder_dim=1, hidden_1dim=3, kernel=5)
-      self.conv1x1 =nn.conv2d(kernel_size=1)
-      self.linear = nn.Linear(56*406, gin_channels)
+      self.conv1x1 =nn.Conv2d(in_channels = 9,out_channels = 1,kernel_size=1)
+      self.linear = nn.Linear(68*418*9, gin_channels)
     if n_lang>1 and n_speakers >1:
-      self.emb_g = pre_vec(encoder_dim=1, hidden_1dim=3, kernel=5)
-      self.emb_l=nn.Embedding(n_lang,gin_channels)
+      #self.emb_g = pre_vec(encoder_dim=1, hidden_1dim=3, kernel=5)
+      #self.conv1x1 =nn.Conv2d(in_channels = 9, out_channels = 1,kernel_size=1)
+      #self.linear = nn.Linear(68*418*9, gin_channels//2)
+      self.emb_g=nn.Embedding(n_speakers,gin_channels//2)
+      nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
+      self.emb_l=nn.Embedding(n_lang,gin_channels//2)
       nn.init.uniform_(self.emb_l.weight, -0.1, 0.1)
 
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, l=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
-      g,_=self.emb_g(g)
-      g = self.conv1x1(g)
-      batch, channel, width, height = g.size()
-      g = g.view(batch, channel*width*height)
-      g = self.linear(g)
+      g=self.emb_g(g)
+      #g = self.conv1x1(g)
+      #batch, channel, width, height = g.size()
+      #g = g.view(batch, channel*width*height)
+      #g = self.linear(g)
+      #original code
       g = F.normalize(g).unsqueeze(-1)# [b, h]
+      #g=g.unsqueeze(-1)
     if l is not None:
       l=self.emb_l(l)
       l = F.normalize(l).unsqueeze(-1)# [b, h]
-    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, l=l)
+    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g, l=l)
 
     if gen:
       w = torch.exp(logw) * x_mask * length_scale

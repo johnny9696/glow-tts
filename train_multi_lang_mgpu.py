@@ -73,7 +73,7 @@ def train_and_eval(rank, n_gpus, hps):
 
   generator = models.FlowGenerator(
       n_vocab=len(letter_) + getattr(hps.data, "add_blank", False), 
-      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=512,**hps.model).to(device)
+      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=512,n_lang=2,**hps.model).to(device)
   
   if hps.n_gpus>1:
     print("Multi GPU Setting Start")
@@ -85,12 +85,12 @@ def train_and_eval(rank, n_gpus, hps):
 
   epoch_str = 1
   global_step = 0
-  print(hps.model_dir)
-  _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator, optimizer_g)
-  epoch_str += 1
-  optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
-  optimizer_g._update_learning_rate()
-  global_step = (epoch_str - 1) * len(train_loader)
+  #print(hps.model_dir)
+  #_, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator, optimizer_g)
+  #epoch_str += 1
+  #optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
+  #optimizer_g._update_learning_rate()
+  #global_step = (epoch_str - 1) * len(train_loader)
 
   
   
@@ -114,7 +114,6 @@ def train(rank,device, epoch, hps, generator, optimizer_g, train_loader, logger,
     lang=lang.to(device)
     # Train Generator
     optimizer_g.zero_grad()
-    
     #print(x,y,sid,lang)
 
     (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid,l=lang, gen=False)

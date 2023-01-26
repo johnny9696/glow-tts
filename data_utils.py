@@ -197,7 +197,7 @@ class TextMelSpeakerLoader(torch.utils.data.Dataset):
     def get_text(self, text):
         #text_norm = text_id.text_to_sequence(text, self.text_cleaners, None)
 
-        text_norm = IPA_id.text_to_sequence(text,'ko')
+        text_norm = IPA_id.text_to_sequence(text,'en-us')
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, len(symbols)) # add a blank token, whose id number is len(symbols)
         text_norm = torch.IntTensor(text_norm)
@@ -258,6 +258,59 @@ class TextMelSpeakerCollate():
             sid[i] = batch[ids_sorted_decreasing[i]][2]
 
         return text_padded, input_lengths, mel_padded, output_lengths, sid
+
+class TextMelSpeakerCollate_AE():
+    """ Zero-pads model inputs and targets based on number of frames per step
+    """
+    def __init__(self, n_frames_per_step=1):
+        self.n_frames_per_step = n_frames_per_step
+
+    def __call__(self, batch):
+        """Collate's training batch from normalized text and mel-spectrogram
+        PARAMS
+        ------
+        batch: [text_normalized, mel_normalized]
+        """
+        # Right zero-pad all one-hot text sequences to max input length
+        input_lengths, ids_sorted_decreasing = torch.sort(
+            torch.LongTensor([len(x[0]) for x in batch]),
+            dim=0, descending=True)
+        max_input_len = input_lengths[0]
+
+        text_padded = torch.LongTensor(len(batch), max_input_len)
+        text_padded.zero_()
+        for i in range(len(ids_sorted_decreasing)):
+            text = batch[ids_sorted_decreasing[i]][0]
+            text_padded[i, :text.size(0)] = text
+
+        # Right zero-pad mel-spec
+        num_mels = batch[0][1].size(0)
+        max_target_len = max([x[1].size(1) for x in batch])
+        if max_target_len % self.n_frames_per_step != 0:
+            max_target_len += self.n_frames_per_step - max_target_len % self.n_frames_per_step
+            assert max_target_len % self.n_frames_per_step == 0
+
+        # include mel padded & sid
+        mel_padded = torch.FloatTensor(len(batch), num_mels, max_target_len)
+        mel_padded.zero_()
+
+        #AE mel
+        mel_padded_ae = torch.FloatTensor(len(batch), 1, num_mels, 430)
+        mel_padded_ae.zero_()
+
+        output_lengths = torch.LongTensor(len(batch))
+        sid = torch.LongTensor(len(batch))
+        for i in range(len(ids_sorted_decreasing)):
+            mel = batch[ids_sorted_decreasing[i]][1]
+            mel_padded[i, :, :mel.size(1)] = mel
+            if mel.size(1) > 430:
+                mel_padded_ae[i, :, :, :430] = torch.abs(mel[:,:430].unsqueeze(dim = 0))
+            else:
+                mel_padded_ae[i, :, :, :mel.size(1)] = torch.abs(mel.unsqueeze(dim = 0))
+            output_lengths[i] = mel.size(1)
+            sid[i] = batch[ids_sorted_decreasing[i]][2]
+
+        return text_padded, input_lengths, mel_padded, output_lengths, sid, mel_padded_ae
 
 """Multi Lingual version"""
 class TextMelLangLoader(torch.utils.data.Dataset):
@@ -446,10 +499,11 @@ class TextMelSpeakerLangLoader(torch.utils.data.Dataset):
     def get_mel_text_speaker_pair(self, audiopath_sid_text):
         # separate filename, speaker_id and text
         audiopath, sid, lang, text = audiopath_sid_text[0], audiopath_sid_text[1], audiopath_sid_text[2], audiopath_sid_text[3]
-        text = self.get_text(text,lang)
+        lang, e_lang=self.get_lang(lang)
+        text = self.get_text(text,e_lang)
         mel = self.get_mel(audiopath)
         sid = self.get_sid(sid)
-        lang=self.get_lang(lang)
+        
         return (text, mel, sid,lang)
 
     def get_mel(self, filename):
@@ -475,8 +529,7 @@ class TextMelSpeakerLangLoader(torch.utils.data.Dataset):
         return melspec
 
     def get_text(self, text,lang):
-        from text.multi_apha import text_to_sequence
-        text_norm = text_to_sequence(text,lang)
+        text_norm = IPA_id.text_to_sequence(text,lang)
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, len(symbols)) # add a blank token, whose id number is len(symbols)
         text_norm = torch.IntTensor(text_norm)
@@ -488,9 +541,9 @@ class TextMelSpeakerLangLoader(torch.utils.data.Dataset):
         return sid
     
     def get_lang(self, lang):
-        lang=lt(lang)
+        lang,e_lang=lt(lang)
         lang=torch.IntTensor([int(lang)])
-        return lang
+        return lang,e_lang
 
     def __getitem__(self, index):
         return self.get_mel_text_speaker_pair(self.audiopaths_sid_text[index])
