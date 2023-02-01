@@ -51,7 +51,7 @@ class Mel_loader(torch.utils.data.Dataset):
             assert melspec.size(0) == self.stft.n_mel_channels, (
                 'Mel dimension mismatch: given {}, expected {}'.format(
                     melspec.size(0), self.stft.n_mel_channels))
-        melspec=torch.abs(melspec)
+        melspec=torch.abs(melspec)/torch.max(torch.abs(melspec))
         return melspec
 
     def __getitem__(self, index):
@@ -70,20 +70,21 @@ class MelCollate():
     than add the channel dimension on the tensor
         """
     def __init__(self, slice_length, hps) -> None:
-        self.slice_length = slice_length
-        self.frames = int(hps.data.sampling_rate / hps.data.win_length * (hps.data.win_length / hps.data.hop_length) * self.slice_length)
+        
+        self.frames = slice_length
 
     def __call__(self, batch):
         num_mels = batch[0].size(0)
-        mel_padded = torch.FloatTensor(len(batch), 1, num_mels, self.frames)
+        mel_padded = torch.FloatTensor(len(batch), num_mels, self.frames)
         mel_padded.zero_()
         for i in range(len(batch)):
             mel = batch[i]
-            mel=mel.unsqueeze(dim = 0)
-            if mel.size(2) > self.frames :
-                mel_padded[i, :, :, :self.frames] = mel[:,:, :self.frames]
-            else : 
-                mel_padded[i, :, :, :mel.size(2)] = mel
+            if mel.size(1) > self.frames +100 :
+                mel_padded[i, :, :self.frames] = mel[:, 100:self.frames+100]
+            elif mel.size(1) > self.frames : 
+                mel_padded[i, :, :self.frames] = mel[:,:self.frames]
+            else :
+                mel_padded[i, :, :mel.size(1)] = mel
 
         return mel_padded
 
@@ -128,8 +129,8 @@ class MelSID_loader(torch.utils.data.Dataset):
             assert melspec.size(0) == self.stft.n_mel_channels, (
                 'Mel dimension mismatch: given {}, expected {}'.format(
                     melspec.size(0), self.stft.n_mel_channels))
-        melspec=torch.abs(melspec)
-        return melspec
+        melspec=torch.abs(melspec)/torch.max(torch.abs(melspec))
+        return melspec 
 
     def __getitem__(self, index):
         return self.get_mel_out(self.audio_path[index])
@@ -140,20 +141,18 @@ class MelSID_loader(torch.utils.data.Dataset):
 class MelSIDCollate():
     """
     batch : [mel_normalize] 2 dimesion shape
-    to train auto encoder we need to change in 3 Dimension
-    [batch,[mel, frames], sid] -> [batch, [1,mel, frames], sid]
+    [batch,[mel, frames], sid] -> [batch, [mel, frames], sid]
 
     to make all the audio frames same we pad zeros on mel
     than add the channel dimension on the tensor
         """
     def __init__(self, slice_length, hps) -> None:
-        self.slice_length = slice_length
-        self.frames = int(hps.data.sampling_rate / hps.data.win_length * (hps.data.win_length / hps.data.hop_length) * self.slice_length)
+        self.frames = slice_length
         self.speaker= hps.model.output_channel
 
     def __call__(self, batch):
         num_mels = batch[0][0].size(0)
-        mel_padded = torch.FloatTensor(len(batch), 1, num_mels, self.frames)
+        mel_padded = torch.FloatTensor(len(batch), num_mels, self.frames)
         mel_padded.zero_()
 
         sid = torch.LongTensor(len(batch))
@@ -161,11 +160,10 @@ class MelSIDCollate():
 
         for i in range(len(batch)):
             mel = batch[i][0]
-            mel = mel.unsqueeze(dim = 0)
-            if mel.size(2) > self.frames :
-                mel_padded[i, :, :, :self.frames] = mel[:,:, :self.frames]
+            if mel.size(1) > self.frames :
+                mel_padded[i, :, :self.frames] = mel[:, :self.frames]
             else : 
-                mel_padded[i, :, :, :mel.size(2)] = mel
+                mel_padded[i, :, :mel.size(1)] = mel
             sid[i] = batch[i][1]
             
 

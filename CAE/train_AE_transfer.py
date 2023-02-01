@@ -13,8 +13,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mel_data import MelSID_loader, MelSIDCollate
-from StackedAE import Convolution_Auto_Encoder as ACE
-from StackedAE import Convolution_AE_Classification as model
+from CAE import Convolution_Auto_Encoder as ACE
+from CAE import Convolution_AE_Classification as model
 from sid_list import sid as sid_list
 
 
@@ -82,8 +82,7 @@ def train_and_eval(rank,n_gpu, hps):
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
 
-    AE_model = ACE(encoder_dim=hps.model.encoder_dim, hidden_1dim=hps.model.hidden_dim1,
-    hidden_2dim=hps.model.hidden_dim2, kernel=hps.model.kernel).to(device)
+    AE_model = ACE(encoder_dim=hps.model.encoder_dim, hidden_1dim=hps.model.hidden_dim1, kernel=hps.model.kernel).to(device)
 
     #load model dict
     checkpoint_path = "/media/caijb/data_drive/autoencoder/log/kernel5"
@@ -91,7 +90,7 @@ def train_and_eval(rank,n_gpu, hps):
     AE_model, _, _, _ = utils.load_checkpoint(checkpoint_path, AE_model)
 
     CAC_model = model (encoder_dim=hps.model.encoder_dim, hidden_1dim=hps.model.hidden_dim1,
-    hidden_2dim=hps.model.hidden_dim2, kernel=hps.model.kernel,n_speaker= hps.model.output_channel, hps = hps).to(device)
+     kernel=hps.model.kernel,n_class= hps.model.output_channel, hps = hps).to(device)
 
     CAC_model.encoder = AE_model.encoder
     """

@@ -72,4 +72,42 @@ class Convolution_Auto_Encoder(nn.Module):
     def get_vector(self,mel):
         return self.encoder(mel)
 
+class Convolution_AE_Classification(nn.Module):
+    def __init__(self,
+    encoder_dim,
+    hidden_1dim,
+    kernel=5,
+    n_class=None):
+        super().__init__()
+        self.encoder_dim=encoder_dim
+        self.hidden_dim_1=hidden_1dim
+        
+
+        #convolution autoencoder
+        self.encoder=Encoder(encoder_dim=self.encoder_dim, hidden_1dim=self.hidden_dim_1, kernel=kernel)
+        self.relu=nn.ReLU()
+        self.linear1=nn.Linear(9*68*418,65536)
+        self.linear2=nn.Linear(65536,4096)
+        self.linear3=nn.Linear(4096,256)
+        if n_class != None:
+            self.linear4=nn.Linear(256,n_class)
+        
+
+    def forward(self,mel,classification=False):
+        mel= self.encoder(mel)
+        mel = self.relu(mel)
+        batch, channel, width, height =mel.size()
+        mel = mel.view(batch, channel*width*height)
+        mel = self.linear1(mel)
+        mel = self.relu(mel)
+        mel = self.linear2(mel)
+        mel = self.relu(mel)
+        mel = self.linear3(mel)
+        mel = self.relu(mel)
+        if classification:
+            mel = self.linear4(mel)
+            mel = self.relu(mel)
+        return mel
+
+
 
