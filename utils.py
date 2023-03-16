@@ -41,7 +41,13 @@ def load_checkpoint(checkpoint_path, model, optimizer=None):
   if hasattr(model, 'module'):
     model.module.load_state_dict(new_state_dict)
   else:
-    model.load_state_dict(new_state_dict)
+    try:
+      model.load_state_dict(new_state_dict)
+    except:
+      from torch import nn
+      emb_l=nn.Embedding(5,256)
+      nn.init.uniform_(emb_l.weight, -0.1, 0.1)
+      new_state_dict['emb_l'] = emb_l
   logger.info("Loaded checkpoint '{}' (iteration {})" .format(
     checkpoint_path, iteration))
   return model, optimizer, learning_rate, iteration
@@ -151,7 +157,7 @@ def get_hparams(init=True):
   parser = argparse.ArgumentParser()
   parser.add_argument('-c', '--config', type=str, default="./configs/multi_lang.json",
                       help='JSON file for configuration',required=False)
-  parser.add_argument('-m', '--model', type=str, default="cross",required=False,
+  parser.add_argument('-m', '--model', type=str, default="zero_nonlang_multi",required=False,
                       help='Model name')
   
   args = parser.parse_args()

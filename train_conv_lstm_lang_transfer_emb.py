@@ -8,17 +8,20 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
 
 
-from data_utils import TextMelLoader, TextMelCollate , TextMelSpeakerLoader, TextMelSpeakerCollate
-import models
-from CAE.CAE import Convolution_Auto_Encoder as CAE
+from data_utils import  TextMelSpeakerLangLoader, TextMelSpeakerLangCollate
+import models_conv_lstm as models
+from Speaker_Encoder.speaker_encoder import Convolution_LSTM_classification as embed_model
 import commons
 import utils
-from text.symbols import symbols
+from text.multi_apha import letter_
 
 import audio_processing as ap
 import librosa
+
+import torch.multiprocessing as mp
                             
 
 global_step = 2
@@ -27,18 +30,26 @@ global_step = 2
 def main():
   """Assume Single Node Multi GPUs Training Only"""
   assert torch.cuda.is_available(), "CPU training is not allowed."
-
-  n_gpus = torch.cuda.current_device()
-  print(n_gpus)
-  rank=0
-
   hps = utils.get_hparams()
-  train_and_eval(rank,0,hps)
+  print(hps)
+  torch.manual_seed(hps.train.seed)
+  hps.n_gpus = torch.cuda.device_count()
+  
+  hps.batch_size=int(hps.train.batch_size/hps.n_gpus)
+  if hps.n_gpus>1:
+    mp.spawn(train_and_eval,nprocs=hps.n_gpus,args=(hps.n_gpus,hps,))
+  else:   
+    train_and_eval(0,hps.n_gpus,hps)
   
   
 
 def train_and_eval(rank, n_gpus, hps):
   global global_step
+  if hps.n_gpus>1:
+    os.environ["MASTER_ADDR"]="localhost"
+    os.environ["MASTER_PORT"]="12355"
+    dist.init_process_group(backend='nccl',init_method='env://',world_size=n_gpus,rank=rank)
+
   if rank == 0:
     logger = utils.get_logger(hps.model_dir)
     logger.info(hps)
@@ -46,78 +57,85 @@ def train_and_eval(rank, n_gpus, hps):
     writer = SummaryWriter(log_dir=hps.model_dir)
     writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
 
-
-  torch.manual_seed(hps.train.seed)
-  torch.cuda.set_device(n_gpus)
+  device=torch.device("cuda:{:d}".format(rank))
 
 
-  train_dataset = TextMelSpeakerLoader(hps.data.training_files, hps.data)
-  collate_fn = TextMelSpeakerCollate(1)
+  train_dataset = TextMelSpeakerLangLoader(hps.data.training_files, hps.data)
+  collate_fn = TextMelSpeakerLangCollate(1)
   train_loader = DataLoader(train_dataset, num_workers=1, shuffle=False,
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
   if rank == 0:
-    val_dataset = TextMelSpeakerLoader(hps.data.validation_files, hps.data)
+    val_dataset = TextMelSpeakerLangLoader(hps.data.validation_files, hps.data)
     val_loader = DataLoader(val_dataset, num_workers=1, shuffle=False,
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=True, collate_fn=collate_fn)
 
-  AE_model = CAE(encoder_dim=1, hidden_1dim=3,
-     kernel=5)
-
-    #load model dict
-  checkpoint_path = "/media/caijb/data_drive/autoencoder/log/kernel5"
-  checkpoint_path = utils.latest_checkpoint_path(checkpoint_path)
-  AE_model, _, _, _ = utils.load_checkpoint(checkpoint_path, AE_model)
 
   generator = models.FlowGenerator(
-      n_vocab=len(symbols) + getattr(hps.data, "add_blank", False), 
-      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,gin_channels=256,**hps.model).cuda(n_gpus)
-  
-  generator.prevec = AE_model.Encoder
+      n_vocab=len(letter_) + getattr(hps.data, "add_blank", False), 
+      out_channels=hps.data.n_mel_channels,n_speakers=hps.model.n_speaker,
+      gin_channels=512,lstm_hidden1=hps.LSTM.hidden_dim1,lstm_hidden2=hps.LSTM.hidden_dim2,
+      lstm_hidden3 =hps.LSTM.hidden_dim3, lstm_l_hidden=hps.LSTM.l_hidden,
+      lstm_num_layers=hps.LSTM.num_layers,slice_length=hps.data.slice_length,
+      lstm_kernel=hps.LSTM.lstm_kernel ,n_lang=2,**hps.model).to(device)
 
+
+  #call the pretrained model
+  embed = embed_model(encoder_dim = hps.data.slice_length, hidden_dim1= hps.LSTM.hidden_dim1,
+    hidden_dim2=hps.LSTM.hidden_dim2, hiddem_dim3= hps.LSTM.hidden_dim3,
+    l_hidden=hps.LSTM.l_hidden, num_layers=hps.LSTM.num_layers, embedding_size=hps.LSTM.embedding_size,
+    kernel=hps.LSTM.lstm_kernel).to(device)
+
+  embed_model_path = "/media/caijb/data_drive/autoencoder/log/kernel5__conv_LSTM"
+  embed_model_path = utils.latest_checkpoint_path(embed_model_path)
+  embed, _, _, _ = utils.load_checkpoint(embed_model_path, embed)
+
+  generator.emb_g.encoder = embed.encoder
+  generator.emb_g.LSTM = embed.LSTM
   
-  for p in generator.prevec.parameters():
-    p.requires_grad = False
-  
+  if hps.n_gpus>1:
+    print("Multi GPU Setting Start")
+    generator=DistributedDataParallel(generator,device_ids=[rank]).to(device)
+    print("Multi GPU Setting Finish")
 
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, 
     warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
 
   epoch_str = 1
   global_step = 0
-  try:
-    _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator, optimizer_g)
-    epoch_str += 1
-    optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
-    optimizer_g._update_learning_rate()
-    global_step = (epoch_str - 1) * len(train_loader)
-  except:
-    if hps.train.ddi and os.path.isfile(os.path.join(hps.model_dir, "ddi_G.pth")):
-      _ = utils.load_checkpoint(os.path.join(hps.model_dir, "ddi_G.pth"), generator, optimizer_g)
+  print(hps.model_dir)
+  #_, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator)
+  #epoch_str += 1
+  #optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
+  #optimizer_g._update_learning_rate()
+  #global_step = (epoch_str - 1) * len(train_loader)
+
   
   
   for epoch in range(epoch_str, hps.train.epochs + 1):
     if rank==0:
-      train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer)
+      train(rank, device, epoch, hps, generator, optimizer_g, train_loader, logger, writer)
       evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, writer_eval)
       utils.save_checkpoint(generator, optimizer_g, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "G_{}.pth".format(epoch)))
     else:
-      train(rank, epoch, hps, generator, optimizer_g, train_loader, None, None)
+      train(rank,device, epoch, hps, generator, optimizer_g, train_loader, None, None)
 
 
-def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer):
+def train(rank,device, epoch, hps, generator, optimizer_g, train_loader, logger, writer):
   global global_step
 
   generator.train()
-  for batch_idx, (x, x_lengths, y, y_lengths, sid) in enumerate(train_loader):
-    x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
-    y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
-    sid=sid.cuda(rank,non_blocking=True)
+  for batch_idx, (x, x_lengths, y, y_lengths, sid,lang) in enumerate(train_loader):
+    x, x_lengths = x.to(device), x_lengths.to(device)
+    y, y_lengths = y.to(device), y_lengths.to(device)
+    sid=sid.to(device)
+    lang=lang.to(device)
     # Train Generator
     optimizer_g.zero_grad()
-    
-    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid, gen=False)
+    #print(x,y,sid,lang)
+
+    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid,l=lang, gen=False)
     l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
     l_length = commons.duration_loss(logw, logw_, x_lengths)
 
@@ -129,7 +147,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
     
     if rank==0:
       if batch_idx % hps.train.log_interval == 0:
-        (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
+        (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], l=lang[:1], gen=True)
         audio_logging(y[:1],sid[:1],global_step,hps,writer,batch_idx,'train_org')
         audio_logging(y_gen,sid[:1],global_step,hps,writer,batch_idx,'train')
         logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -160,12 +178,13 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
     generator.eval()
     losses_tot = []
     with torch.no_grad():
-      for batch_idx, (x, x_lengths, y, y_lengths,sid) in enumerate(val_loader):
+      for batch_idx, (x, x_lengths, y, y_lengths,sid,lang) in enumerate(val_loader):
         x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
         y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
         sid=sid.cuda(rank,non_blocking=True)
-        
-        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid, gen=False)
+        lang=lang.cuda(rank,non_blocking=True)
+
+        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=sid,l=lang, gen=False)
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
         l_length = commons.duration_loss(logw, logw_, x_lengths)
 
@@ -178,7 +197,7 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
           losses_tot = [x + y for (x, y) in zip(losses_tot, loss_gs)]
 
         if batch_idx % hps.train.log_interval == 0:
-          (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], gen=True)
+          (y_gen, *_), *_ = generator(x[:1], x_lengths[:1], g=sid[:1], l=lang[:1], gen=True)
           audio_logging(y[:1],sid[:1],global_step,hps,writer_eval,batch_idx,'eval_org')
           audio_logging(y_gen,sid[:1],global_step,hps,writer_eval,batch_idx,'eval')
           logger.info('Eval Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(

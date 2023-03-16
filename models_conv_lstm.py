@@ -8,7 +8,7 @@ import commons
 import attentions
 import monotonic_align
 
-from CAE.CAE import Encoder as pre_vec
+from Speaker_Encoder.speaker_encoder import Convolution_LSTM_cos
 
 
 class DurationPredictor(nn.Module):
@@ -221,6 +221,13 @@ class FlowGenerator(nn.Module):
       hidden_channels_enc=None,
       hidden_channels_dec=None,
       prenet=False,
+      lstm_hidden1 = 256,
+      lstm_hidden2 = 64,
+      lstm_hidden3 =16,
+      lstm_l_hidden = 768,
+      lstm_num_layers = 3,
+      slice_length = 430,
+      lstm_kernel = 5,
       **kwargs):
 
     super().__init__()
@@ -251,21 +258,13 @@ class FlowGenerator(nn.Module):
     self.hidden_channels_dec = hidden_channels_dec
     self.prenet = prenet
 
-    self.encoder = TextEncoder(
-        n_vocab, 
-        out_channels, 
-        hidden_channels_enc or hidden_channels, 
-        filter_channels, 
-        filter_channels_dp, 
-        n_heads, 
-        n_layers_enc, 
-        kernel_size, 
-        p_dropout, 
-        window_size=window_size,
-        block_length=block_length,
-        mean_only=mean_only,
-        prenet=prenet,
-        gin_channels=gin_channels)
+    self.lstm_hidden1 = lstm_hidden1
+    self.lstm_hidden2 = lstm_hidden2
+    self.lstm_hidden3 = lstm_hidden3
+    self.lstm_l_hidden = lstm_l_hidden
+    self.lstm_num_layers = lstm_num_layers
+    self.lstm_kernel = lstm_kernel
+    self.slice_length = slice_length
 
     self.decoder = FlowSpecDecoder(
         out_channels, 
@@ -280,23 +279,54 @@ class FlowGenerator(nn.Module):
         sigmoid_scale=sigmoid_scale,
         gin_channels=gin_channels)
 
-    if n_speakers > 1 and n_lang < 1:
-      self.emb_g=nn.Embedding(n_speakers,gin_channels//2)
-      nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
-    if n_lang>1 and n_speakers >1:
-      self.emb_g=nn.Embedding(n_speakers,gin_channels//2)
-      nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
-      self.emb_l=nn.Embedding(n_lang,gin_channels//2)
-      nn.init.uniform_(self.emb_l.weight, -0.1, 0.1)
+    if n_speakers >1  and n_lang <1:
+        self.encoder = TextEncoder(
+        n_vocab, 
+        out_channels, 
+        hidden_channels_enc or hidden_channels, 
+        filter_channels, 
+        filter_channels_dp, 
+        n_heads, 
+        n_layers_enc, 
+        kernel_size, 
+        p_dropout, 
+        window_size=window_size,
+        block_length=block_length,
+        mean_only=mean_only,
+        prenet=prenet,
+        gin_channels=gin_channels)
+        self.emb_g=Convolution_LSTM_cos(encoder_dim=self.slice_length, hidden_dim1=self.lstm_hidden1, hidden_dim2=self.lstm_hidden2,hiddem_dim3=self.lstm_hidden3,
+        l_hidden=self.lstm_l_hidden, num_layers=self.lstm_num_layers, input_size=self.out_channels,embedding_size=self.gin_channels,kernel=self.lstm_kernel)
+
+    if n_speakers > 1 and n_lang >1 :
+        self.encoder = TextEncoder(
+        n_vocab, 
+        out_channels, 
+        hidden_channels_enc or hidden_channels, 
+        filter_channels, 
+        filter_channels_dp, 
+        n_heads, 
+        n_layers_enc, 
+        kernel_size, 
+        p_dropout, 
+        window_size=window_size,
+        block_length=block_length,
+        mean_only=mean_only,
+        prenet=prenet,
+        gin_channels=gin_channels)
+        self.emb_g=Convolution_LSTM_cos(encoder_dim=self.slice_length, hidden_dim1=self.lstm_hidden1, hidden_dim2=self.lstm_hidden2,hiddem_dim3=self.lstm_hidden3,
+        l_hidden=self.lstm_l_hidden, num_layers=self.lstm_num_layers, input_size=self.out_channels,embedding_size=self.gin_channels//2,kernel=self.lstm_kernel)
+        self.emb_l=nn.Embedding(n_lang,gin_channels//2)
+        nn.init.uniform_(self.emb_l.weight, -0.1, 0.1)
 
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, l=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
-      g=self.emb_g(g)
+      g = self.emb_g(g)
       g = F.normalize(g).unsqueeze(-1)# [b, h]
     if l is not None:
       l=self.emb_l(l)
       l = F.normalize(l).unsqueeze(-1)# [b, h]
-    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g, l=l)
+    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g,l=l)
 
     if gen:
       w = torch.exp(logw) * x_mask * length_scale

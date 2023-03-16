@@ -12,8 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-from mel_data_1dcos import MelSID_loader, MelSIDCollate
-from CAE_1d import Encoder as model
+from mel_data import MelSID_loader, MelSIDCollate
+from speaker_encoder import Convolution_LSTM_classification as model
 
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -24,7 +24,7 @@ import audio_processing as ap
 import torch.multiprocessing as mp
 
 global_step=1
-config_path='/home/caijb/Desktop/zero_shot_glowtts/CAE/configs/base_1d.json'
+config_path='/home/caijb/Desktop/zero_shot_glowtts/CAE/configs/base__conv_LSTM.json'
 save_path='/config.json'
 
 def main():
@@ -80,8 +80,10 @@ def train_and_eval(rank,n_gpu, hps):
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
 
-    AE_model = model(encoder_dim=hps.model.encoder_dim, hidden_1dim=hps.model.hidden_dim1,
-    hidden_2dim=hps.model.hidden_dim2, kernel=hps.model.kernel).to(device)
+    AE_model = model(encoder_dim = hps.data.slice_length, hidden_dim1= hps.model.hidden_dim1,
+    hidden_dim2=hps.model.hidden_dim2, hiddem_dim3= hps.model.hidden_dim3,
+    l_hidden=hps.model.l_hidden, num_layers=hps.model.num_layers, embedding_size=hps.model.embedding_size, n_speaker=hps.model.output_channel).to(device)
+
 
     #mutli_gpu_Set
     if hps.n_gpus>1:
@@ -107,70 +109,77 @@ def train(rank, device, epoch, hps, model, optimizer, train_loader, logger, writ
     global global_step
 
     model.train()
-    loss = nn.CosineEmbeddingLoss()
+    loss = nn.CrossEntropyLoss()
 
-    for batch_id,(mel_A,mel_B, sid_A,sid_B, NorF) in enumerate(train_loader):
-        mel_A=mel_A.to(device)
-        mel_B = mel_B.to(device)
-        sid_A = sid_A.to(device)
-        sid_B = sid_B.to(device)
-        NorF = NorF.to(device)
+    TP =0
+    length =0
+
+    for batch_id,(mel,sid) in enumerate(train_loader):
+        mel = mel.to(device)
+        sid =sid.to(device)
         
 
         optimizer.zero_grad()
-        mel_A_hat = model(mel_A)
-        mel_B_hat = model(mel_B)
-        mel_A_hat = mel_A_hat.squeeze(dim =1)
-        mel_B_hat = mel_B_hat.squeeze(dim =1)
-        output = loss(mel_A_hat,mel_B_hat, NorF)
+        mel_hat = model(mel)
+        output = loss(mel_hat, sid)
         output.backward()
         optimizer.step()
 
         if rank == 0 :
+            mel_hat_ = torch.argmax(mel_hat, dim = 1)
+            TP += torch.sum(mel_hat_ == sid)
+            length += len(sid)
             if batch_id % hps.train.log_interval == 0:
-                print(sid_A[0],sid_B[0],NorF[0])
-                logger.info('Train Epoch : {}, step : {} , Loss : {}'.format(epoch, batch_id*epoch, output.item()))
+                acc = TP/ length
+                logger.info('Train Epoch : {}, step : {} , Loss : {}, ACC : {}'.format(epoch, batch_id*epoch, output.item(), acc))
 
                 utils.summarize(
                     writer = writer,
                     global_step = global_step,
-                     scalars = {"/Loss" : output.item()}
+                     scalars = {"/Loss" : output.item(),
+                     "Acc" : acc}
                 )
+                TP = 0
+                length = 0
         global_step += 1
-
 
 def eval(rank, device, epoch, hps, model, optimizer, eval_loader, logger,  writer):
     global global_step
 
     model.eval()
-    loss = nn.CosineEmbeddingLoss()
+    loss = nn.CrossEntropyLoss()
 
-    for batch_id,(mel_A,mel_B, sid_A,sid_B, NorF) in enumerate(eval_loader):
-        mel_A=mel_A.to(device)
-        mel_B = mel_B.to(device)
-        sid_A = sid_A.to(device)
-        sid_B = sid_B.to(device)
-        NorF = NorF.to(device)
+    TP =0
+    length =0
+
+    for batch_id,(mel,sid) in enumerate(eval_loader):
+        mel = mel.to(device)
+        sid =sid.to(device)
         
+
         optimizer.zero_grad()
-        mel_A_hat = model(mel_A)
-        mel_B_hat = model(mel_B)
-        mel_A_hat = mel_A_hat.squeeze(dim =1)
-        mel_B_hat = mel_B_hat.squeeze(dim =1)
-        output = loss(mel_A_hat,mel_B_hat, NorF)
+        mel_hat = model(mel)
+        output = loss(mel_hat, sid)
         optimizer.step()
 
         if rank == 0 :
+            mel_hat_ = torch.argmax(mel_hat, dim = 1)
+            TP += torch.sum(mel_hat_ == sid)
+            length += len(sid)
             if batch_id % hps.train.log_interval == 0:
-
-                logger.info('Eval Epoch : {}, step : {} , Loss : {}'.format(epoch, batch_id*epoch, output.item()))
+                acc = TP/ length
+                logger.info('Eval Epoch : {}, step : {} , Loss : {}, ACC : {}'.format(epoch, batch_id*epoch, output.item(), acc))
 
                 utils.summarize(
                     writer = writer,
                     global_step = global_step,
-                     scalars = {"/Loss" : output.item()}
+                     scalars = {"/Loss" : output.item(),
+                     "Acc" : acc}
                 )
+                TP = 0
+                length = 0
         global_step += 1
+
 
 if __name__ == "__main__":
     main()

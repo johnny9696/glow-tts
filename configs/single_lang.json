@@ -1,7 +1,7 @@
 {
   "train": {
     "use_cuda": true,
-    "log_interval": 100,
+    "log_interval": 50,
     "seed": 1234,
     "epochs": 1000,
     "learning_rate": 1e-0,
@@ -9,14 +9,14 @@
     "eps": 1e-9,
     "warmup_steps": 4000,
     "scheduler": "noam",
-    "batch_size": 8,
+    "batch_size": 32,
     "ddi": false,
     "fp16_run": false
   },
   "data": {
     "load_mel_from_disk": false,
-    "training_files":"/media/caijb/data_drive/data/Zeroshot/train_vctk_9.txt",
-    "validation_files":"/media/caijb/data_drive/data/Zeroshot/eval_vctk_9.txt",
+    "training_files":"/media/caijb/data_drive/data/Zeroshot/train_lj.txt",
+    "validation_files":"/media/caijb/data_drive/data/Zeroshot/eval_lj.txt",
     "feature_files" : "/media/caijb/data_drive/data/Zeroshot/vctk_feature.txt",
     "text_cleaners":["korean_cleaners"],
     "max_wav_value": 32768.0,

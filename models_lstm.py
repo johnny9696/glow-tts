@@ -8,7 +8,7 @@ import commons
 import attentions
 import monotonic_align
 
-from CAE.CAE import Encoder as pre_vec
+from Speaker_Encoder.speaker_encoder import LSTM
 
 
 class DurationPredictor(nn.Module):
@@ -221,6 +221,7 @@ class FlowGenerator(nn.Module):
       hidden_channels_enc=None,
       hidden_channels_dec=None,
       prenet=False,
+      LSTM_hidden = 768,
       **kwargs):
 
     super().__init__()
@@ -250,6 +251,7 @@ class FlowGenerator(nn.Module):
     self.hidden_channels_enc = hidden_channels_enc
     self.hidden_channels_dec = hidden_channels_dec
     self.prenet = prenet
+    self.LSTM_hidden = LSTM_hidden
 
     self.encoder = TextEncoder(
         n_vocab, 
@@ -281,16 +283,15 @@ class FlowGenerator(nn.Module):
         gin_channels=gin_channels)
 
     if n_speakers > 1 and n_lang < 1:
-      self.emb_g=nn.Embedding(n_speakers,gin_channels//2)
-      nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
+      self.emb_g=LSTM(input_size = out_channels, hidden_size=self.LSTM_hidden, embedding_size=gin_channels)
     if n_lang>1 and n_speakers >1:
-      self.emb_g=nn.Embedding(n_speakers,gin_channels//2)
-      nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
+      self.emb_g=LSTM(input_size = out_channels, hidden_size=self.LSTM_hidden, embedding_size=gin_channels//2)
       self.emb_l=nn.Embedding(n_lang,gin_channels//2)
       nn.init.uniform_(self.emb_l.weight, -0.1, 0.1)
 
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, l=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
+      g = g.transpose(2,1)
       g=self.emb_g(g)
       g = F.normalize(g).unsqueeze(-1)# [b, h]
     if l is not None:

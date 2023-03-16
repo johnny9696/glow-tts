@@ -12,8 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-from mel_data_1dcos import MelSID_loader, MelSIDCollate
-from LSTM_cos import LSTM_cos as model
+from mel_data import MelSID_loader, MelSIDCollate
+from speaker_encoder import LSTM as model
 
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
