@@ -174,8 +174,10 @@ class Mel_GE2E(torch.utils.data.Dataset):
     def __init__(self, audio_path, hps):
         self.audio_path = audio_path
         self.sid_list = os.listdir(self.audio_path)
+        """
         if hps.train.utterance != len(sid_list):
             sys.exit('Utterance({}) and Speaker number({}) is not correct'.format(len(sid_list), hps.train.utterance))
+        """
         self.speaker_per_wav = []
         for i in self.sid_list:
             tmp = os.path.join(self.audio_path, i)
@@ -187,37 +189,33 @@ class Mel_GE2E(torch.utils.data.Dataset):
         self.filter_length = hps.data.filter_length
         self.hop_length = hps.data.hop_length
         self.win_length = hps.data.win_length
-        self.n_mels = hps.data.n_mel_channnels
+        self.n_mels = hps.data.n_mel_channels
         self.mel_fmin = hps.data.mel_fmin
         self.mel_fmax = hps.data.mel_fmax
         self.add_noise = hps.data.add_noise
-        self.slice_length = ((self.sampling_rate*hps.data.slice_length)//self.filter_length) * (self.filter_length//self.hop_length)
+        self.slice_length = hps.data.slice_length
         self.utterance = hps.train.utterance
         self.stft = commons.TacotronSTFT(
             self.filter_length, self.hop_length, self.win_length,
-            self.n_mel_channels, self.sampling_rate, self.mel_fmin,
+            self.n_mels, self.sampling_rate, self.mel_fmin,
             self.mel_fmax)
 
         random.seed(1234)
         random.shuffle(self.speaker_min_wav)
 
     def get_mel(self, filename):
-        if not self.load_mel_from_disk:
-            audio, sampling_rate = load_wav_to_torch(filename)
-            if sampling_rate != self.stft.sampling_rate:
-                raise ValueError("{} {} SR doesn't match target {} SR".format(
-                    sampling_rate, self.stft.sampling_rate))
-            if self.add_noise:
-                audio = audio + torch.rand_like(audio)
-            audio_norm = audio / self.max_wav_value
-            audio_norm = audio_norm.unsqueeze(0)
-            melspec = self.stft.mel_spectrogram(audio_norm)
-            melspec = torch.squeeze(torch.tensor(melspec), 0)
-        else:
-            melspec = torch.from_numpy(np.load(filename))
-            assert melspec.size(0) == self.stft.n_mel_channels, (
-                'Mel dimension mismatch: given {}, expected {}'.format(
-                    melspec.size(0), self.stft.n_mel_channels))
+        audio, sampling_rate = load_wav_to_torch(filename)
+        if sampling_rate != self.stft.sampling_rate:
+            print(filename)
+            raise ValueError("{} {} SR doesn't match target {} SR".format(filename, sampling_rate, self.stft.sampling_rate))
+
+        if self.add_noise:
+            audio = audio + torch.rand_like(audio)
+        audio_norm = audio / self.max_wav_value
+        audio_norm = audio_norm.unsqueeze(0)
+        melspec = self.stft.mel_spectrogram(audio_norm)
+        melspec = torch.squeeze(torch.tensor(melspec), 0)
+
         melspec=torch.abs(melspec)/torch.max(torch.abs(melspec))
         return melspec
 
@@ -230,10 +228,10 @@ class Mel_GE2E(torch.utils.data.Dataset):
         mel_padded = torch.FloatTensor(self.utterance, self.n_mels, self.slice_length)
         mel_padded.zero_()
         for i, path in enumerate(wav_path):
-            mel_db = self.get_mel(path)
+            mel_db = self.get_mel(os.path.join(self.audio_path,audio_path_tmp,path))
             mel_db=torch.abs(mel_db)/torch.max(torch.abs(mel_db))
-            if mel_db.size(1) > self.frames :
-                mel_padded[i, :, :self.frames] = mel_db[:, :self.frames]
+            if mel_db.size(1) > self.slice_length :
+                mel_padded[i, :, :self.slice_length] = mel_db[:, :self.slice_length]
             else : 
                 mel_padded[i, :, :mel_db.size(1)] = mel_db
         return mel_padded
