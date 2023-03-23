@@ -50,7 +50,8 @@
     "hidden_channels_enc": 192,
     "hidden_channels_dec": 192,
     "window_size": 4,
-    "n_speaker" : 108
+    "n_speaker" : 108,
+    "speaker_encoder_type" : "Conv-LSTM"
   },
   "LSTM": {
     "hidden_dim1" : 256,

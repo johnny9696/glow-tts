@@ -14,7 +14,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mel_data import Mel_GE2E
-from speaker_encoder import Convolution_LSTM_cos as model
+from speaker_encoder import LSTM as model
 from GE2E import GE2ELoss
 
 
@@ -58,7 +58,7 @@ def train_and_eval(rank,n_gpu, hps):
 
     if hps.n_gpus>1:
         os.environ["MASTER_ADDR"]="localhost"
-        os.environ["MASTER_PORT"]="12360"
+        os.environ["MASTER_PORT"]="12355"
         dist.init_process_group(backend='nccl',init_method='env://',world_size=n_gpu,rank=rank)
 
     if rank == 0:
@@ -81,10 +81,7 @@ def train_and_eval(rank,n_gpu, hps):
       batch_size=hps.batch_size, pin_memory=True,
       drop_last=True)
 
-    Conv_Lstm_model = model(encoder_dim = hps.data.slice_length, hidden_dim1= hps.model.hidden_dim1,
-    hidden_dim2=hps.model.hidden_dim2, hiddem_dim3= hps.model.hidden_dim3,
-    l_hidden=hps.model.l_hidden, num_layers=hps.model.num_layers, embedding_size=hps.model.embedding_size).to(device)
-
+    Conv_Lstm_model = model(input_size= hps.data.n_mel_channels, hidden_size=hps.model.l_hidden, embedding_size=hps.model.embedding_size, num_layers=hps.model.num_layers).to(device)
     ge2e_loss = GE2ELoss(device)
 
 
@@ -117,6 +114,7 @@ def train(rank, device, epoch, hps, model,loss_func, optimizer, train_loader, lo
     for batch_id, mel in enumerate(train_loader):
         tot = 0
         mel = mel.to(device)
+        mel = torch.transpose(mel, 3,2)
         optimizer.zero_grad()
         mel = torch.reshape(mel, (hps.batch_size*hps.train.utterance, mel.size(2),mel.size(3)))
         perm = random.sample(range(0, hps.batch_size*hps.train.utterance), hps.batch_size*hps.train.utterance)
@@ -153,6 +151,7 @@ def eval(rank, device, epoch, hps, model,loss_func, optimizer, eval_loader, logg
         for batch_id, mel in enumerate(eval_loader):
             tot = 0
             mel = mel.to(device)
+            mel = torch.transpose(mel, 3,2)
             optimizer.zero_grad()
             mel = torch.reshape(mel, (hps.batch_size*hps.train.utterance, mel.size(2),mel.size(3)))
             perm = random.sample(range(0, hps.batch_size*hps.train.utterance), hps.batch_size*hps.train.utterance)

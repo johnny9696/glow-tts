@@ -1,6 +1,6 @@
 {
   "train": {
-    "model_dir" : "/media/caijb/data_drive/autoencoder/log/kernel5_LSTM",
+    "model_dir" : "/media/caijb/data_drive/autoencoder/log/LSTM_Clasificaion",
     "classification" : false,
     "log_interval": 50,
     "seed": 1234,
@@ -28,6 +28,7 @@
   },
   "model": {
     "hidden_size" : 768,
+    "embedding_size" : 256,
     "num_layers" : 3
   }
 }

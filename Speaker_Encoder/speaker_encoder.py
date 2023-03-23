@@ -2,6 +2,36 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+class LSTM_Classification(nn.Module) :
+    def __init__(self,
+    input_size = 80,
+    hidden_size= 512,
+    num_layers = 3,
+    embedding_size= 256,
+    n_speaker=0):
+        super().__init__()
+        self.layer3_lstm = nn.LSTM(input_size = input_size , hidden_size = hidden_size, num_layers = num_layers, batch_first =True)
+        self.linear = nn.Linear(hidden_size, embedding_size)
+        self.linear1 =nn.Linear(embedding_size, n_speaker)
+        self.relu = nn.ReLU()
+    def forward(self, mel):
+        mel = torch.transpose(mel, 1, 2) #[b,frames, n_mels]
+        mel, (_,_)=self.layer3_lstm(mel) #[b, frames, hidden]
+        #mel = torch.sum(mel, dim =1)/mel.size(1) #[b,hidden]
+        mel = self.linear(mel[-1])
+        mel = self.relu(mel)
+        mel = self.linear1(mel)
+        self.softmax = nn.Softmax(dim = 1)
+        return mel
+        
+    def get_vector(self, mel):
+        mel = torch.transpose(mel, 1, 2) #[b,frames, n_mels]
+        mel, (_,_)=self.layer3_lstm(mel) #[b, frames, hidden]
+        #mel = torch.sum(mel, dim =1)/mel.size(1) #[b,hidden]
+        mel = self.linear(mel[:,-1])
+        mel = self.relu(mel)
+        return mel
+
 class LSTM(nn.Module) :
     def __init__(self,
     input_size = 80,
@@ -11,12 +41,13 @@ class LSTM(nn.Module) :
         super().__init__()
         self.layer3_lstm = nn.LSTM(input_size = input_size , hidden_size = hidden_size, num_layers = num_layers, batch_first =True)
         self.linear = nn.Linear(hidden_size, embedding_size)
+        self.relu = nn.ReLU()
     
     def forward(self, mel):
-        mel, _=self.layer3_lstm(mel) #[b, frames, hidden]
-        mel = torch.sum(mel, dim =1)/mel.size(1) #[b,hidden]
-        mel = self.linear(mel)
-        return mel
+        mel, (_,_)=self.layer3_lstm(mel) #[b, frames, hidden]
+        #mel = torch.sum(mel, dim =1)/mel.size(1) #[b,hidden]
+        mel = self.linear(mel[:,-1])
+        return self.relu(mel)
 
 class Encoder(nn.Module):
     def __init__(self, encoder_dim=430,

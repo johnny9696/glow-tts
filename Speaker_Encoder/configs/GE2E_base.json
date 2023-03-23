@@ -1,17 +1,17 @@
 {
   "train": {
-    "model_dir" : "/media/caijb/data_drive/GE2E/log/Conv-LSTM",
+    "model_dir" : "/media/caijb/data_drive/GE2E/log/LSTM512",
     "classification" : false,
-    "log_interval": 50,
+    "log_interval": 3,
     "seed": 1234,
-    "epochs": 10000,
-    "learning_rate": 1e-5,
+    "epochs": 100000,
+    "learning_rate": 1e-3,
     "betas": [0.9, 0.98],
     "eps": 1e-9,
     "warmup_steps": 4000,
     "scheduler": "noam",
-    "batch_size": 64,
-    "utterance" : 5
+    "batch_size": 4,
+    "utterance" : 200
   },
   "data": {
     "training_files":"/media/caijb/data_drive/data/vctk/VCTK-Corpus/wav48/",
@@ -31,8 +31,8 @@
     "hidden_dim1" : 512,
     "hidden_dim2" : 128,
     "hidden_dim3" : 32,
-    "l_hidden" :  768,
-    "num_layers" : 5,
+    "l_hidden" :  512,
+    "num_layers" : 3,
     "embedding_size" : 256
   }
 }

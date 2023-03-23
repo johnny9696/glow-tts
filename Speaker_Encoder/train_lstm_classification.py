@@ -13,7 +13,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mel_data import MelSID_loader, MelSIDCollate
-from speaker_encoder import LSTM as model
+from speaker_encoder import LSTM_Classification as model
 
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -24,7 +24,7 @@ import audio_processing as ap
 import torch.multiprocessing as mp
 
 global_step=1
-config_path='/home/caijb/Desktop/zero_shot_glowtts/CAE/configs/base_LSTM.json'
+config_path='/home/caijb/Desktop/zero_shot_glowtts/Speaker_Encoder/configs/base_LSTM.json'
 save_path='/config.json'
 
 def main():
@@ -80,92 +80,102 @@ def train_and_eval(rank,n_gpu, hps):
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
 
-    AE_model = model(input_size = hps.data.n_mel_channels , hidden_size = hps.model.hidden_size
-     , num_layers=hps.model.num_layers).to(device)
+    LSTM_model = model(input_size = hps.data.n_mel_channels , hidden_size = hps.model.hidden_size
+     , num_layers=hps.model.num_layers, embedding_size=hps.model.embedding_size, n_speaker=108).to(device)
 
     #mutli_gpu_Set
     if hps.n_gpus>1:
         print("Multi GPU Setting Start")
-        AE_model=DistributedDataParallel(AE_model,device_ids=[rank]).to(device)
+        LSTM_model=DistributedDataParallel(LSTM_model,device_ids=[rank]).to(device)
         print("Multi GPU Setting Finish")
 
-    optimizer = torch.optim.Adam(AE_model.parameters(), lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
+    optimizer = torch.optim.Adam(LSTM_model.parameters(), lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
 
     epoch_str = 1
     global_step = 0
 
     for epoch in range(epoch_str, hps.train.epochs + 1):
         if rank == 0:
-            train(rank, device, epoch, hps, AE_model, optimizer, train_loader,logger, writer)
-            eval(rank, device, epoch, hps, AE_model, optimizer, eval_loader, logger, writer_eval)
+            train(rank, device, epoch, hps, LSTM_model, optimizer, train_loader,logger, writer)
+            eval(rank, device, epoch, hps, LSTM_model, optimizer, eval_loader, logger, writer_eval)
 
-            utils.save_checkpoint(AE_model, optimizer, hps.train.learning_rate, epoch, os.path.join(hps.train.model_dir, "G_{}.pth".format(epoch)))
+            utils.save_checkpoint(LSTM_model, optimizer, hps.train.learning_rate, epoch, os.path.join(hps.train.model_dir, "G_{}.pth".format(epoch)))
         else : 
-            train(rank, device, epoch,  hps, AE_model, optimizer, train_loader, None, None)
+            train(rank, device, epoch,  hps, LSTM_model, optimizer, train_loader, None, None)
 
 def train(rank, device, epoch, hps, model, optimizer, train_loader, logger, writer):
     global global_step
 
     model.train()
-    loss = nn.CosineEmbeddingLoss()
+    loss = nn.CrossEntropyLoss()
 
-    for batch_id,(mel_A,mel_B, sid_A,sid_B, NorF) in enumerate(train_loader):
-        mel_A=mel_A.to(device)
-        mel_B = mel_B.to(device)
-        sid_A = sid_A.to(device)
-        sid_B = sid_B.to(device)
-        NorF = NorF.to(device)
+    TP =0
+    length =0
+
+    for batch_id,(mel,sid) in enumerate(train_loader):
+        mel = mel.to(device)
+        sid =sid.to(device)
         
 
         optimizer.zero_grad()
-        mel_A_hat = model(mel_A)
-        mel_B_hat = model(mel_B)
-        output = loss(mel_A_hat,mel_B_hat, NorF)
+        mel_hat = model(mel)
+        output = loss(mel_hat, sid)
         output.backward()
         optimizer.step()
 
         if rank == 0 :
+            mel_hat_ = torch.argmax(mel_hat, dim = 1)
+            TP += torch.sum(mel_hat_ == sid)
+            length += len(sid)
             if batch_id % hps.train.log_interval == 0:
-                print(sid_A[0],sid_B[0],NorF[0])
-                logger.info('Train Epoch : {}, step : {} , Loss : {}'.format(epoch, batch_id*epoch, output.item()))
+                acc = TP/ length
+                logger.info('Train Epoch : {}, step : {} , Loss : {}, ACC : {}'.format(epoch, batch_id*epoch, output.item(), acc))
 
                 utils.summarize(
                     writer = writer,
                     global_step = global_step,
-                     scalars = {"/Loss" : output.item()}
+                     scalars = {"/Loss" : output.item(),
+                     "Acc" : acc}
                 )
+                TP = 0
+                length = 0
         global_step += 1
-
 
 def eval(rank, device, epoch, hps, model, optimizer, eval_loader, logger,  writer):
     global global_step
 
     model.eval()
-    loss = nn.CosineEmbeddingLoss()
+    loss = nn.CrossEntropyLoss()
 
-    for batch_id,(mel_A,mel_B, sid_A,sid_B, NorF) in enumerate(eval_loader):
-        mel_A=mel_A.to(device)
-        mel_B = mel_B.to(device)
-        sid_A = sid_A.to(device)
-        sid_B = sid_B.to(device)
-        NorF = NorF.to(device)
+    TP =0
+    length =0
+
+    for batch_id,(mel,sid) in enumerate(eval_loader):
+        mel = mel.to(device)
+        sid =sid.to(device)
         
+
         optimizer.zero_grad()
-        mel_A_hat = model(mel_A)
-        mel_B_hat = model(mel_B)
-        output = loss(mel_A_hat,mel_B_hat, NorF)
+        mel_hat = model(mel)
+        output = loss(mel_hat, sid)
         optimizer.step()
 
         if rank == 0 :
+            mel_hat_ = torch.argmax(mel_hat, dim = 1)
+            TP += torch.sum(mel_hat_ == sid)
+            length += len(sid)
             if batch_id % hps.train.log_interval == 0:
-
-                logger.info('Eval Epoch : {}, step : {} , Loss : {}'.format(epoch, batch_id*epoch, output.item()))
+                acc = TP/ length
+                logger.info('Eval Epoch : {}, step : {} , Loss : {}, ACC : {}'.format(epoch, batch_id*epoch, output.item(), acc))
 
                 utils.summarize(
                     writer = writer,
                     global_step = global_step,
-                     scalars = {"/Loss" : output.item()}
+                     scalars = {"/Loss" : output.item(),
+                     "Acc" : acc}
                 )
+                TP = 0
+                length = 0
         global_step += 1
 
 if __name__ == "__main__":

@@ -216,7 +216,7 @@ class Mel_GE2E(torch.utils.data.Dataset):
         melspec = self.stft.mel_spectrogram(audio_norm)
         melspec = torch.squeeze(torch.tensor(melspec), 0)
 
-        melspec=torch.abs(melspec)/torch.max(torch.abs(melspec))
+        melspec=torch.abs(melspec)/self.max_wav_value
         return melspec
 
 

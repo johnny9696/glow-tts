@@ -8,7 +8,7 @@ import commons
 import attentions
 import monotonic_align
 
-from Speaker_Encoder.speaker_encoder import Convolution_LSTM_cos
+from Speaker_Encoder.speaker_encoder import Convolution_LSTM_cos, LSTM
 
 
 class DurationPredictor(nn.Module):
@@ -228,6 +228,7 @@ class FlowGenerator(nn.Module):
       lstm_num_layers = 3,
       slice_length = 430,
       lstm_kernel = 5,
+      speaker_encoder_type=None,
       **kwargs):
 
     super().__init__()
@@ -278,46 +279,38 @@ class FlowGenerator(nn.Module):
         n_sqz=n_sqz,
         sigmoid_scale=sigmoid_scale,
         gin_channels=gin_channels)
-
+    self.encoder = TextEncoder(
+        n_vocab, 
+        out_channels, 
+        hidden_channels_enc or hidden_channels, 
+        filter_channels, 
+        filter_channels_dp, 
+        n_heads, 
+        n_layers_enc, 
+        kernel_size, 
+        p_dropout, 
+        window_size=window_size,
+        block_length=block_length,
+        mean_only=mean_only,
+        prenet=prenet,
+        gin_channels=gin_channels)
+    emb_size= gin_channels
     if n_speakers >1  and n_lang <1:
-        self.encoder = TextEncoder(
-        n_vocab, 
-        out_channels, 
-        hidden_channels_enc or hidden_channels, 
-        filter_channels, 
-        filter_channels_dp, 
-        n_heads, 
-        n_layers_enc, 
-        kernel_size, 
-        p_dropout, 
-        window_size=window_size,
-        block_length=block_length,
-        mean_only=mean_only,
-        prenet=prenet,
-        gin_channels=gin_channels)
-        self.emb_g=Convolution_LSTM_cos(encoder_dim=self.slice_length, hidden_dim1=self.lstm_hidden1, hidden_dim2=self.lstm_hidden2,hiddem_dim3=self.lstm_hidden3,
-        l_hidden=self.lstm_l_hidden, num_layers=self.lstm_num_layers, input_size=self.out_channels,embedding_size=self.gin_channels,kernel=self.lstm_kernel)
-
+        emb_size= gin_channels
     if n_speakers > 1 and n_lang >1 :
-        self.encoder = TextEncoder(
-        n_vocab, 
-        out_channels, 
-        hidden_channels_enc or hidden_channels, 
-        filter_channels, 
-        filter_channels_dp, 
-        n_heads, 
-        n_layers_enc, 
-        kernel_size, 
-        p_dropout, 
-        window_size=window_size,
-        block_length=block_length,
-        mean_only=mean_only,
-        prenet=prenet,
-        gin_channels=gin_channels)
-        self.emb_g=Convolution_LSTM_cos(encoder_dim=self.slice_length, hidden_dim1=self.lstm_hidden1, hidden_dim2=self.lstm_hidden2,hiddem_dim3=self.lstm_hidden3,
-        l_hidden=self.lstm_l_hidden, num_layers=self.lstm_num_layers, input_size=self.out_channels,embedding_size=self.gin_channels//2,kernel=self.lstm_kernel)
-        self.emb_l=nn.Embedding(n_lang,gin_channels//2)
+        emb_size= gin_channels//2
+        self.emb_l = nn.Embedding(self.n_lang, emb_size)
         nn.init.uniform_(self.emb_l.weight, -0.1, 0.1)
+    if speaker_encoder_type ==None:
+      self.emb_g = nn.Embedding(self.n_speakers, emb_size)
+    elif speaker_encoder_type == 'LSTM':
+      self.emb_g = LSTM(input_size=self.out_channels, hidden_size=self.lstm_l_hidden,embedding_size=emb_size, num_layers=self.lstm_num_layers)
+    elif speaker_encoder_type =='Conv-LSTM':
+      self.emb_g=Convolution_LSTM_cos(encoder_dim=self.slice_length, hidden_dim1=self.lstm_hidden1, hidden_dim2=self.lstm_hidden2,hiddem_dim3=self.lstm_hidden3,
+        l_hidden=self.lstm_l_hidden, num_layers=self.lstm_num_layers, input_size=self.out_channels,embedding_size=emb_size,kernel=self.lstm_kernel)
+    else:
+      raise('Wrong Encoder Type')
+
 
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, l=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
