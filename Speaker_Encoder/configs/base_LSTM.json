@@ -27,8 +27,9 @@
     "slice_length" : 430
   },
   "model": {
-    "hidden_size" : 768,
+    "hidden_size" : 512,
     "embedding_size" : 256,
-    "num_layers" : 3
+    "num_layers" : 3,
+    "output_channel" : 108
   }
 }

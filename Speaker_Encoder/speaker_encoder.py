@@ -14,14 +14,15 @@ class LSTM_Classification(nn.Module) :
         self.linear = nn.Linear(hidden_size, embedding_size)
         self.linear1 =nn.Linear(embedding_size, n_speaker)
         self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim = 1)
     def forward(self, mel):
         mel = torch.transpose(mel, 1, 2) #[b,frames, n_mels]
         mel, (_,_)=self.layer3_lstm(mel) #[b, frames, hidden]
         #mel = torch.sum(mel, dim =1)/mel.size(1) #[b,hidden]
-        mel = self.linear(mel[-1])
+        mel = self.linear(mel[:,-1])
         mel = self.relu(mel)
         mel = self.linear1(mel)
-        self.softmax = nn.Softmax(dim = 1)
+        mel = self.softmax(mel)
         return mel
         
     def get_vector(self, mel):

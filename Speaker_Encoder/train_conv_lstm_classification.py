@@ -24,7 +24,7 @@ import audio_processing as ap
 import torch.multiprocessing as mp
 
 global_step=1
-config_path='/home/caijb/Desktop/zero_shot_glowtts/CAE/configs/base__conv_LSTM.json'
+config_path='/home/caijb/Desktop/zero_shot_glowtts/Speaker_Encoder/configs/base__conv_LSTM.json'
 save_path='/config.json'
 
 def main():
@@ -56,7 +56,7 @@ def train_and_eval(rank,n_gpu, hps):
 
     if hps.n_gpus>1:
         os.environ["MASTER_ADDR"]="localhost"
-        os.environ["MASTER_PORT"]="12355"
+        os.environ["MASTER_PORT"]="12356"
         dist.init_process_group(backend='nccl',init_method='env://',world_size=n_gpu,rank=rank)
 
     if rank == 0:

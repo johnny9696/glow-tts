@@ -72,12 +72,12 @@ def train_and_eval(rank,n_gpu, hps):
 
     #load_train_dataset
     train_dataset = Mel_GE2E(hps.data.training_files,hps)
-    train_loader = DataLoader(train_dataset, num_workers=2, shuffle=False,
+    train_loader = DataLoader(train_dataset, num_workers=2, shuffle=True,
       batch_size=hps.batch_size, pin_memory=True,
       drop_last=True)
     if rank == 0 :
         eval_dataset =Mel_GE2E(hps.data.validation_files,hps)
-        eval_loader = DataLoader(eval_dataset, num_workers=2, shuffle=False,
+        eval_loader = DataLoader(eval_dataset, num_workers=2, shuffle=True,
       batch_size=hps.batch_size, pin_memory=True,
       drop_last=True)
 
@@ -103,7 +103,7 @@ def train_and_eval(rank,n_gpu, hps):
         if rank == 0:
             train(rank, device, epoch, hps, Conv_Lstm_model, ge2e_loss, optimizer, train_loader,logger, writer)
             eval(rank, device, epoch, hps, Conv_Lstm_model, ge2e_loss, optimizer, eval_loader, logger, writer_eval)
-            if epoch %120 ==0:
+            if epoch %10 ==0:
                 utils.save_checkpoint(Conv_Lstm_model, optimizer, hps.train.learning_rate, epoch, os.path.join(hps.train.model_dir, "EMB_{}.pth".format(epoch)))
                 utils.save_checkpoint(ge2e_loss, optimizer, hps.train.learning_rate, epoch, os.path.join(hps.train.model_dir, "GE2E_{}.pth".format(epoch)))
         else : 
