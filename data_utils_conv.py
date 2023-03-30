@@ -63,8 +63,8 @@ class TextMelSpeakerLangLoader(torch.utils.data.Dataset):
         text = self.get_text(text,e_lang)
         mel = self.get_mel(audiopath)
         sid, feature_mel = self.get_sid(sid)
-        
-        return (text, mel, sid,lang, feature_mel)
+        #feature mel is selectied voice type
+        return (text, mel, sid,lang, mel)
 
     def get_mel(self, filename):
         if not self.load_mel_from_disk:

@@ -153,7 +153,7 @@ def load_filepaths_and_text(filename, split="|"):
   return filepaths_and_text
 
 
-def get_hparams(init=True):
+def get_hparams(config =None, model=None, init=True):
   parser = argparse.ArgumentParser()
   parser.add_argument('-c', '--config', type=str, default="./configs/multi_lang.json",
                       help='JSON file for configuration',required=False)
@@ -161,12 +161,18 @@ def get_hparams(init=True):
                       help='Model name')
   
   args = parser.parse_args()
-  model_dir = os.path.join("/media/caijb/data_drive/glowtts_zeroshot/logs/", args.model)
+  if model ==None:
+    model_dir = os.path.join("/media/caijb/data_drive/glowtts_zeroshot/logs/", args.model)
+  else:
+    model_dir = os.path.join("/media/caijb/data_drive/glowtts_zeroshot/logs/", model)
 
   if not os.path.exists(model_dir):
     os.makedirs(model_dir)
 
-  config_path = args.config
+  if config == None:
+    config_path = args.config
+  else:
+    config_path  = config
   config_save_path = os.path.join(model_dir, "config.json")
   if init:
     with open(config_path, "r") as f:
