@@ -30,7 +30,7 @@ global_step = 2
 def main():
   """Assume Single Node Multi GPUs Training Only"""
   assert torch.cuda.is_available(), "CPU training is not allowed."
-  hps = utils.get_hparams(config='./config/single_lstm_ge2e', model='LJ_LSTM_GE2E')
+  hps = utils.get_hparams(config='./configs/single_lstm_ge2e.json', model='LJ_LSTM768_GE2E')
   print(hps)
   torch.manual_seed(hps.train.seed)
   hps.n_gpus = torch.cuda.device_count()
@@ -78,11 +78,11 @@ def train_and_eval(rank, n_gpus, hps):
       gin_channels=256,lstm_hidden1=hps.LSTM.hidden_dim1,lstm_hidden2=hps.LSTM.hidden_dim2,
       lstm_hidden3 =hps.LSTM.hidden_dim3, lstm_l_hidden=hps.LSTM.l_hidden,
       lstm_num_layers=hps.LSTM.num_layers,slice_length=hps.data.slice_length,
-      lstm_kernel=hps.LSTM.lstm_kernel,speaker_encoder_type=hps.model.speaker_encoder_type,**hps.model).to(device)
+      lstm_kernel=hps.LSTM.lstm_kernel,**hps.model).to(device)
 
 
   #call the pretrained model
-  pre_model_path = "/media/caijb/data_drive/GE2E/log/LSTM512_s"
+  pre_model_path = "/media/caijb/data_drive/GE2E/log/LSTM768_s"
   LSTM_model = LSTM(input_size=hps.data.n_mel_channels, hidden_size=hps.LSTM.l_hidden, embedding_size=hps.LSTM.embedding_size,
   num_layers=hps.LSTM.num_layers).to(device)
 

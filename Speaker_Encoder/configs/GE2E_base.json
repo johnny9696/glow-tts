@@ -1,6 +1,6 @@
 {
   "train": {
-    "model_dir" : "/media/caijb/data_drive/GE2E/log/Conv_LSTM512_s",
+    "model_dir" : "/media/caijb/data_drive/GE2E/log/Conv_LSTM768_s",
     "classification" : false,
     "log_interval": 3,
     "seed": 1234,
@@ -31,7 +31,7 @@
     "hidden_dim1" : 512,
     "hidden_dim2" : 128,
     "hidden_dim3" : 32,
-    "l_hidden" :  512,
+    "l_hidden" :  768,
     "num_layers" : 3,
     "embedding_size" : 256
   }

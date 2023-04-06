@@ -57,7 +57,7 @@
     "hidden_dim1" : 512,
     "hidden_dim2" : 128,
     "hidden_dim3" : 32,
-    "l_hidden" :  512,
+    "l_hidden" :  768,
     "num_layers" : 3,
     "embedding_size" : 256,
     "output_channel" : 108,

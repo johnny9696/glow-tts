@@ -1,6 +1,6 @@
 {
   "train": {
-    "model_dir" : "/media/caijb/data_drive/autoencoder/log/kernel5_conv_512LSTM3",
+    "model_dir" : "/media/caijb/data_drive/autoencoder/log/kernel5_conv_768LSTM3",
     "classification" : false,
     "log_interval": 50,
     "seed": 1234,
@@ -30,7 +30,7 @@
     "hidden_dim1" : 512,
     "hidden_dim2" : 128,
     "hidden_dim3" : 32,
-    "l_hidden" :  512,
+    "l_hidden" : 768,
     "num_layers" : 3,
     "embedding_size" : 256,
     "output_channel" : 108

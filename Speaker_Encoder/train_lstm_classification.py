@@ -56,7 +56,7 @@ def train_and_eval(rank,n_gpu, hps):
 
     if hps.n_gpus>1:
         os.environ["MASTER_ADDR"]="localhost"
-        os.environ["MASTER_PORT"]="12355"
+        os.environ["MASTER_PORT"]="12359"
         dist.init_process_group(backend='nccl',init_method='env://',world_size=n_gpu,rank=rank)
 
     if rank == 0:

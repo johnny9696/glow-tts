@@ -87,6 +87,8 @@ def train_and_eval(rank,n_gpu, hps):
 
     ge2e_loss = GE2ELoss(device)
 
+    Conv_Lstm_model,_,_,iter= utils.load_checkpoint(utils.latest_checkpoint_path(hps.train.model_dir,"EMB_*.pth"),Conv_Lstm_model)
+    ge2e_loss,_,_,_= utils.load_checkpoint(utils.latest_checkpoint_path(hps.train.model_dir,"GE2E_*.pth"),ge2e_loss)
 
     #mutli_gpu_Set
     if hps.n_gpus>1:
@@ -96,7 +98,7 @@ def train_and_eval(rank,n_gpu, hps):
 
     optimizer = torch.optim.Adam([{'params' : Conv_Lstm_model.parameters()},{ 'params' :ge2e_loss.parameters()}], lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
 
-    epoch_str = 1
+    epoch_str = 1 + iter
     global_step = 0
 
     for epoch in range(epoch_str, hps.train.epochs + 1):

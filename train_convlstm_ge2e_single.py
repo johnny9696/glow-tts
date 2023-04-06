@@ -30,7 +30,7 @@ global_step = 2
 def main():
   """Assume Single Node Multi GPUs Training Only"""
   assert torch.cuda.is_available(), "CPU training is not allowed."
-  hps = utils.get_hparams(config='./config/single_convlstm_ge2e', model='LJ_CONVLSTM_GE2E')
+  hps = utils.get_hparams(config='./configs/single_convlstm_ge2e.json', model='LJ_CONVLSTM768_GE2E')
   print(hps)
   torch.manual_seed(hps.train.seed)
   hps.n_gpus = torch.cuda.device_count()
@@ -78,18 +78,20 @@ def train_and_eval(rank, n_gpus, hps):
       gin_channels=256,lstm_hidden1=hps.LSTM.hidden_dim1,lstm_hidden2=hps.LSTM.hidden_dim2,
       lstm_hidden3 =hps.LSTM.hidden_dim3, lstm_l_hidden=hps.LSTM.l_hidden,
       lstm_num_layers=hps.LSTM.num_layers,slice_length=hps.data.slice_length,
-      lstm_kernel=hps.LSTM.lstm_kernel,speaker_encoder_type=hps.model.speaker_encoder_type,**hps.model).to(device)
+      lstm_kernel=hps.LSTM.lstm_kernel,**hps.model).to(device)
 
 
   #call the pretrained model
-  pre_model_path = "/media/caijb/data_drive/GE2E/log/Conv_LSTM512_s"
+  pre_model_path = "/media/caijb/data_drive/GE2E/log/Conv_LSTM768_s"
   LSTM_model = Convolution_LSTM_cos(input_size=hps.data.n_mel_channels,
   hidden_dim1=hps.LSTM.hidden_dim1, hidden_dim2=hps.LSTM.hidden_dim2
-  , hiddem_dim3=hps.LSTM.hidden_dim3, kernel=hps.LSTM.lstm_kernal,
+  , hiddem_dim3=hps.LSTM.hidden_dim3, kernel=hps.LSTM.lstm_kernel,
    l_hidden=hps.LSTM.l_hidden, num_layers=hps.LSTM.num_layers,
    embedding_size=hps.LSTM.embedding_size, encoder_dim=hps.data.slice_length).to(device)
 
-  LSTM_model,_,_,_= utils.load_checkpoint(utils.latest_checkpoint_path(pre_model_path,"EMB_*.pth"),LSTM_model)
+  check_point_path = os.path.join(pre_model_path, 'EMB_1570.pth')
+  LSTM_model,_,_,_= utils.load_checkpoint(check_point_path,LSTM_model)
+  #LSTM_model,_,_,_= utils.load_checkpoint(utils.latest_checkpoint_path(pre_model_path,"EMB_*.pth"),LSTM_model)
   generator.emb_g = LSTM_model
   
 
