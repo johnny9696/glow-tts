@@ -30,7 +30,7 @@ global_step = 2
 def main():
   """Assume Single Node Multi GPUs Training Only"""
   assert torch.cuda.is_available(), "CPU training is not allowed."
-  hps = utils.get_hparams(config='./config/single_convlstm_class', model='LJ_CONVLSTM768_Classification')
+  hps = utils.get_hparams(config='./configs/single_convlstm_class.json', model='LJ_CONVLSTM768_Classification')
   print(hps)
   torch.manual_seed(hps.train.seed)
   hps.n_gpus = torch.cuda.device_count()

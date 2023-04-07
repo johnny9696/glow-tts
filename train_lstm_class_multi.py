@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from data_utils_conv import  TextMelSpeakerLangLoader, TextMelSpeakerLangCollate
 import models_conv_lstm as models
-from Speaker_Encoder.speaker_encoder import Convolution_LSTM_cos as embed_model
+from Speaker_Encoder.speaker_encoder import LSTM_Classification
 import commons
 import utils
 from text.multi_apha import letter_
@@ -30,7 +30,7 @@ global_step = 2
 def main():
   """Assume Single Node Multi GPUs Training Only"""
   assert torch.cuda.is_available(), "CPU training is not allowed."
-  hps = utils.get_hparams()
+  hps = utils.get_hparams(config='./config/single_lstm_class', model='LJ_LSTM_Classification')
   print(hps)
   torch.manual_seed(hps.train.seed)
   hps.n_gpus = torch.cuda.device_count()
@@ -78,46 +78,29 @@ def train_and_eval(rank, n_gpus, hps):
       gin_channels=256,lstm_hidden1=hps.LSTM.hidden_dim1,lstm_hidden2=hps.LSTM.hidden_dim2,
       lstm_hidden3 =hps.LSTM.hidden_dim3, lstm_l_hidden=hps.LSTM.l_hidden,
       lstm_num_layers=hps.LSTM.num_layers,slice_length=hps.data.slice_length,
-      lstm_kernel=hps.LSTM.lstm_kernel,speaker_encoder_type=hps.model.speaker_encoder_type, **hps.model).to(device)
+      lstm_kernel=hps.LSTM.lstm_kernel,speaker_encoder_type=hps.model.speaker_encoder_type,**hps.model).to(device)
 
 
   #call the pretrained model
-  print("Load_pretrained model")
-  embed = embed_model(encoder_dim = hps.data.slice_length, hidden_dim1= hps.LSTM.hidden_dim1,
-    hidden_dim2=hps.LSTM.hidden_dim2, hiddem_dim3= hps.LSTM.hidden_dim3,
-    l_hidden=hps.LSTM.l_hidden, num_layers=hps.LSTM.num_layers, embedding_size=hps.LSTM.embedding_size,
-    kernel=hps.LSTM.lstm_kernel).to(device)
-
-  embed_model_path = "/media/caijb/data_drive/GE2E/log/Conv-LSTM/EMB_2160.pth"
-  #embed_model_path = utils.latest_checkpoint_path(embed_model_path)
-  embed, _, _, _ = utils.load_checkpoint(embed_model_path, embed)
-
-  generator.emb_g.encoder = embed.encoder
-  generator.emb_g.LSTM = embed.LSTM
-
-  for p in generator.emb_g.parameters():
-        p.requires_grad = False
-
-  print("Domain adaption Finished")
-
-  if hps.n_gpus>1:
-    print("Multi GPU Setting Start")
-    generator=DistributedDataParallel(generator,device_ids=[rank]).to(device)
-    print("Multi GPU Setting Finish")
+  pre_model_path = '/media/caijb/data_drive/glowtts_zeroshot/logs/LJ_LSTM768_GE2E'
+  generator,_,_,_= utils.load_checkpoint(utils.latest_checkpoint_path(pre_model_path,"G_*.pth"),generator)
 
   optimizer_g = commons.Adam(generator.parameters(), scheduler=hps.train.scheduler, dim_model=hps.model.hidden_channels, 
     warmup_steps=hps.train.warmup_steps, lr=hps.train.learning_rate, betas=hps.train.betas, eps=hps.train.eps)
 
   epoch_str = 1
   global_step = 0
-  print(hps.model_dir)
-  #_, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), generator)
-  #epoch_str += 1
-  #optimizer_g.step_num = (epoch_str - 1) * len(train_loader)
-  #optimizer_g._update_learning_rate()
-  #global_step = (epoch_str - 1) * len(train_loader)
 
-  
+  for p in generator.emb_g.parameters():
+    p.requires_grad = False
+
+
+  if hps.n_gpus>1:
+    print("Multi GPU Setting Start")
+    generator=DistributedDataParallel(generator,device_ids=[rank]).to(device)
+    print("Multi GPU Setting Finish")
+
+
   
   for epoch in range(epoch_str, hps.train.epochs + 1):
     if rank==0:
@@ -137,12 +120,17 @@ def train(rank,device, epoch, hps, generator, optimizer_g, train_loader, logger,
     y, y_lengths = y.to(device), y_lengths.to(device)
     sid=sid.to(device)
     lang = lang.to(device)
-    mel_emb = mel_emb.to(device)
+    if hps.model.speaker_encoder_type == "Conv-LSTM":
+        mel_emb = mel_emb.to(device)
+    elif hps.model.speaker_encoder_type =="LSTM":
+        mel_emb = torch.transpose(mel_emb,1,2).to(device)
+    else:
+        raise("Wrong Encoder Type {}".format(hps.model.speaker_encoder_type))
     # Train Generator
     optimizer_g.zero_grad()
     #print(x,y,sid,lang)
 
-    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g = mel_emb,  gen = False)
+    (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g = mel_emb, gen = False)
     l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
     l_length = commons.duration_loss(logw, logw_, x_lengths)
 
@@ -190,9 +178,14 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
         x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
         y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
         sid=sid.cuda(rank,non_blocking=True)
-        mel_emb = mel_emb.cuda(rank,non_blocking=True)
+        if hps.model.speaker_encoder_type == "Conv-LSTM":
+            mel_emb = mel_emb.cuda(rank,non_blocking=True)
+        elif hps.model.speaker_encoder_type =="LSTM":
+            mel_emb = torch.transpose(mel_emb,1,2).cuda(rank,non_blocking=True)
+        else:
+            raise("Wrong Encoder Type {}".format(hps.model.speaker_encoder_type))
 
-        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=mel_emb, gen=False)
+        (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths,g=mel_emb,  gen=False)
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
         l_length = commons.duration_loss(logw, logw_, x_lengths)
 
